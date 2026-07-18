@@ -1,0 +1,472 @@
+(function () {
+  const canvas = document.getElementById('webCanvas');
+  const ctx = canvas.getContext('2d');
+
+  let width, height;
+  function resize() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---- mouse tracking (for bending strands) ----
+  const mouse = { x: -9999, y: -9999 };
+  window.addEventListener('mousemove', (e) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+  });
+  window.addEventListener('mouseleave', () => {
+    mouse.x = -9999;
+    mouse.y = -9999;
+  });
+  window.addEventListener('touchmove', (e) => {
+    if (e.touches.length > 0) {
+      mouse.x = e.touches[0].clientX;
+      mouse.y = e.touches[0].clientY;
+    }
+  }, { passive: true });
+
+  // ---- parallax tracking (for depth motion) ----
+  let rawX = 0, rawY = 0;       // -1 to 1, raw cursor offset from center
+  let smoothX = 0, smoothY = 0; // eased version, used for actual movement
+  const PARALLAX_EASE = 0.06;   // lower = smoother/laggier, higher = snappier
+  const PARALLAX_STRENGTH = 60; // max pixels a depth-1 layer would move
+
+  window.addEventListener('mousemove', (e) => {
+    rawX = (e.clientX / width - 0.5) * 2;
+    rawY = (e.clientY / height - 0.5) * 2;
+  });
+
+  // ---- physics tuning ----
+  const SPRING = 0.02;
+  const DAMPING = 0.90;
+  const MOUSE_RADIUS = 120;
+  const MOUSE_FORCE = 9;
+
+  // ---- a single web ----
+  class SpiderWeb {
+    constructor({ cx, cy, radius, spokes, rings, startAngle, endAngle, depth }) {
+      this.points = [];
+      this.depth = depth; // 0 = no parallax movement, 1 = full movement
+      const angleStep = (endAngle - startAngle) / (spokes - 1);
+
+      for (let s = 0; s < spokes; s++) {
+        const angle = startAngle + s * angleStep;
+        const col = [];
+        for (let r = 0; r < rings; r++) {
+          const dist = radius * ((r + 1) / rings);
+          const x = cx + Math.cos(angle) * dist;
+          const y = cy + Math.sin(angle) * dist;
+          const isOuterAnchor = (r === rings - 1);
+          col.push({
+            x, y,
+            ox: x, oy: y,
+            vx: 0, vy: 0,
+            fixed: isOuterAnchor
+          });
+        }
+        this.points.push(col);
+      }
+
+      this.centerFixed = { x: cx, y: cy };
+    }
+
+    update() {
+      for (const col of this.points) {
+        for (const p of col) {
+          if (p.fixed) continue;
+
+          const fx = (p.ox - p.x) * SPRING;
+          const fy = (p.oy - p.y) * SPRING;
+          p.vx += fx;
+          p.vy += fy;
+
+          const dx = p.x - mouse.x;
+          const dy = p.y - mouse.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < MOUSE_RADIUS && dist > 0.001) {
+            const strength = (1 - dist / MOUSE_RADIUS) * MOUSE_FORCE;
+            p.vx += (dx / dist) * strength;
+            p.vy += (dy / dist) * strength;
+          }
+
+          p.vx *= DAMPING;
+          p.vy *= DAMPING;
+          p.x += p.vx;
+          p.y += p.vy;
+        }
+      }
+    }
+
+    draw(ctx, parallaxOffsetX, parallaxOffsetY) {
+      ctx.save();
+      // shift the whole web by its own depth-scaled parallax offset
+      ctx.translate(parallaxOffsetX * this.depth, parallaxOffsetY * this.depth);
+
+      ctx.strokeStyle = 'rgb(1, 2, 1)';
+      ctx.lineWidth = 2;
+
+      for (const col of this.points) {
+        ctx.beginPath();
+        ctx.moveTo(this.centerFixed.x, this.centerFixed.y);
+        for (const p of col) {
+          ctx.lineTo(p.x, p.y);
+        }
+        ctx.stroke();
+      }
+
+      const rings = this.points[0].length;
+      for (let r = 0; r < rings; r++) {
+        ctx.beginPath();
+        for (let s = 0; s < this.points.length; s++) {
+          const p = this.points[s][r];
+          if (s === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        }
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+  }
+
+  // ---- build webs, each with a different depth ----
+  let webs = [];
+  function buildWebs() {
+    // Each corner is just over half of the screen diagonal from the centre,
+    // so all four webs meet in the middle at every screen size.
+    const centerReach = Math.hypot(width, height) * 0.53;
+    webs = [
+      new SpiderWeb({ cx: 0, cy: 0, radius: centerReach, spokes: 9, rings: 6, startAngle: 0, endAngle: Math.PI / 2, depth: 0.4 }),
+      new SpiderWeb({ cx: width, cy: 0, radius: centerReach, spokes: 8, rings: 5, startAngle: Math.PI / 2, endAngle: Math.PI, depth: 0.7 }),
+      new SpiderWeb({ cx: width, cy: height, radius: centerReach, spokes: 9, rings: 6, startAngle: Math.PI, endAngle: Math.PI * 1.5, depth: 0.5 }),
+      new SpiderWeb({ cx: 0, cy: height, radius: centerReach, spokes: 7, rings: 5, startAngle: Math.PI * 1.5, endAngle: Math.PI * 2, depth: 1.0 })
+    ];
+  }
+  buildWebs();
+  window.addEventListener('resize', buildWebs);
+
+  // ---- animation loop ----
+  function animate() {
+    ctx.clearRect(0, 0, width, height);
+
+    // ease the parallax offset toward the raw cursor position
+    smoothX += (rawX - smoothX) * PARALLAX_EASE;
+    smoothY += (rawY - smoothY) * PARALLAX_EASE;
+
+    const offsetX = smoothX * PARALLAX_STRENGTH;
+    const offsetY = smoothY * PARALLAX_STRENGTH;
+
+    for (const web of webs) {
+      web.update();
+      web.draw(ctx, offsetX, offsetY);
+    }
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+
+
+const STOCK_TOTAL = 12; // default stock per card
+const BASE_ITEM_PRICE_KES = 1200;
+document.body.insertAdjacentHTML('beforeend', `
+  <div id="imageLightbox" class="image-lightbox" role="dialog" aria-modal="true" aria-label="Enlarged product photo" hidden>
+    <button class="lightbox-close" type="button" aria-label="Close enlarged photo">×</button>
+    <img id="lightboxImage" alt="Enlarged product photo">
+  </div>`);
+const imageLightbox = document.getElementById('imageLightbox');
+const lightboxImage = document.getElementById('lightboxImage');
+function closeImageLightbox() { imageLightbox.hidden = true; }
+function openImageLightbox(imageSource, imageAlt) {
+  lightboxImage.src = imageSource;
+  lightboxImage.alt = imageAlt || 'Enlarged product photo';
+  imageLightbox.hidden = false;
+}
+imageLightbox.querySelector('.lightbox-close').addEventListener('click', closeImageLightbox);
+imageLightbox.addEventListener('click', event => { if (event.target === imageLightbox) closeImageLightbox(); });
+window.addEventListener('keydown', event => { if (event.key === 'Escape') closeImageLightbox(); });
+
+document.querySelectorAll('.card').forEach(card => {
+  const frame     = card.querySelector('.frame');
+  const fileInput = card.querySelector('.fileInput');
+  const preview   = card.querySelector('.preview');
+
+  const qtyEl       = card.querySelector('.qty');
+  const minusBtn    = card.querySelector('.minus');
+  const plusBtn     = card.querySelector('.plus');
+  const stockLeftEl = card.querySelector('.stockLeft');
+  const addBtn      = card.querySelector('.add-btn');
+
+  // Products are priced at KSh 1,200; the visible amount is converted when needed.
+  const priceInput = card.querySelector('.price-input');
+  priceInput.type = 'text';
+  priceInput.readOnly = true;
+
+  let qty = 1;
+  let images = [];
+  let activeImage = 0;
+  fileInput.multiple = true;
+  // FileReader keeps the original file data intact; no image compression is applied.
+  fileInput.accept = 'image/jpeg,image/png,image/webp,image/avif';
+  fileInput.setAttribute('aria-label', 'Add product photos');
+  frame.insertAdjacentHTML('beforeend', `
+    <button class="gallery-arrow gallery-prev" type="button" aria-label="Previous photo">‹</button>
+    <button class="gallery-arrow gallery-next" type="button" aria-label="Next photo">›</button>
+    <span class="gallery-count" aria-live="polite"></span>`);
+  const previousImage = frame.querySelector('.gallery-prev');
+  const nextImage = frame.querySelector('.gallery-next');
+  const imageCount = frame.querySelector('.gallery-count');
+
+  function showImage() {
+    if (!images.length) return;
+    preview.src = images[activeImage];
+    frame.classList.add('has-image');
+    imageCount.textContent = images.length > 1 ? `${activeImage + 1} / ${images.length}` : '';
+    previousImage.hidden = nextImage.hidden = images.length < 2;
+  }
+
+  function moveImage(step) {
+    if (images.length < 2) return;
+    activeImage = (activeImage + step + images.length) % images.length;
+    showImage();
+  }
+
+  preview.addEventListener('click', event => {
+    if (!preview.src) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openImageLightbox(preview.src, preview.alt);
+  });
+
+  [previousImage, nextImage].forEach((button, index) => button.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    moveImage(index === 0 ? -1 : 1);
+  }));
+
+  fileInput.addEventListener('change', () => {
+    const files = Array.from(fileInput.files).filter(file => file.type.startsWith('image/'));
+    if (!files.length) return;
+    Promise.all(files.map(file => new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = event => resolve(event.target.result);
+      reader.readAsDataURL(file);
+    }))).then(photoUrls => {
+      images = photoUrls;
+      activeImage = 0;
+      showImage();
+    });
+  });
+
+  ['dragover', 'dragenter'].forEach(evt =>
+    frame.addEventListener(evt, e => {
+      e.preventDefault();
+      frame.style.borderColor = 'var(--accent)';
+    })
+  );
+  ['dragleave', 'drop'].forEach(evt =>
+    frame.addEventListener(evt, e => {
+      e.preventDefault();
+      frame.style.borderColor = '';
+    })
+  );
+  frame.addEventListener('drop', e => {
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      fileInput.files = e.dataTransfer.files;
+      fileInput.dispatchEvent(new Event('change'));
+    }
+  });
+
+  function renderQty() {
+    qtyEl.textContent = qty;
+    minusBtn.disabled = qty <= 1;
+    plusBtn.disabled = qty >= STOCK_TOTAL;
+    stockLeftEl.textContent = STOCK_TOTAL - qty + 1;
+  }
+  minusBtn.addEventListener('click', () => { if (qty > 1) { qty--; renderQty(); } });
+  plusBtn.addEventListener('click', () => { if (qty < STOCK_TOTAL) { qty++; renderQty(); } });
+  renderQty();
+
+  const cartIconHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.5 3h2l2.7 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21.5 7H6"/></svg> Add to cart`;
+
+  addBtn.addEventListener('click', () => {
+    const item = {
+      name: card.querySelector('.name-input').value.trim() || 'Untitled product',
+      price: BASE_ITEM_PRICE_KES,
+      quantity: qty
+    };
+    const cart = JSON.parse(localStorage.getItem('mistizenCart') || '[]');
+    const existingItem = cart.find(cartItem => cartItem.name === item.name && cartItem.price === item.price);
+    if (existingItem) existingItem.quantity += item.quantity;
+    else cart.push(item);
+    localStorage.setItem('mistizenCart', JSON.stringify(cart));
+    setTimeout(() => { window.location.href = 'cart.html'; }, 500);
+    addBtn.classList.add('added');
+    addBtn.innerHTML = '✓ Added';
+    setTimeout(() => {
+      addBtn.classList.remove('added');
+      addBtn.innerHTML = cartIconHTML;
+    }, 1200);
+  });
+});
+
+document.body.insertAdjacentHTML('afterbegin', `
+  <nav class="side-menu" aria-label="Main navigation">
+    <span class="menu-handle" aria-hidden="true">☰</span>
+    <a href="Frontend.html" aria-label="Home" title="Home"><span>⌂</span><b>Home</b></a>
+    <a href="PRODUCTS.html" aria-label="Closet" title="Closet"><span>♧</span><b>CLOSET</b></a>
+    <a href="cart.html" aria-label="Cart" title="Cart"><span>🛒</span><b>Cart</b></a>
+    <a href="auth.html" aria-label="Account" title="Log in or sign up"><span>◉</span><b>Account</b></a>
+  </nav>`);
+
+function renderCart() {
+  const cartItems = document.getElementById('cartItems');
+  const cartTotal = document.getElementById('cartTotal');
+  if (!cartItems || !cartTotal) return;
+  const cart = JSON.parse(localStorage.getItem('mistizenCart') || '[]');
+  if (!cart.length) {
+    cartItems.innerHTML = '<p class="empty-cart">Your cart is empty.</p>';
+    cartTotal.textContent = '';
+    return;
+  }
+  cartItems.innerHTML = cart.map((item, index) => `
+    <article class="cart-item">
+      <div><strong>${item.name}</strong><small>Quantity: ${item.quantity}</small></div>
+      <span>${formatCurrency(priceInKes(item) * item.quantity)}</span>
+      <button class="remove-item" data-index="${index}">Remove</button>
+    </article>`).join('');
+  const total = cart.reduce((sum, item) => sum + priceInKes(item) * item.quantity, 0);
+  cartTotal.textContent = `Total: ${formatCurrency(total)}`;
+  cartItems.querySelectorAll('.remove-item').forEach(button => button.addEventListener('click', () => {
+    cart.splice(Number(button.dataset.index), 1);
+    localStorage.setItem('mistizenCart', JSON.stringify(cart));
+    renderCart();
+  }));
+}
+
+const clearCartButton = document.getElementById('clearCart');
+if (clearCartButton) {
+  clearCartButton.addEventListener('click', () => {
+    if (!confirm('Remove all items from your cart?')) return;
+    localStorage.removeItem('mistizenCart');
+    renderCart();
+  });
+}
+let selectedCurrency = localStorage.getItem('mistizenCurrency') || 'KES';
+let currencyRates = { KES: 1 };
+
+function priceInKes(item) {
+  return Number(item.price || item.baseKes || BASE_ITEM_PRICE_KES);
+}
+
+function formatCurrency(amountKes) {
+  const convertedAmount = amountKes * (currencyRates[selectedCurrency] || 1);
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedCurrency, maximumFractionDigits: 2 }).format(convertedAmount);
+  } catch {
+    return `${selectedCurrency} ${convertedAmount.toFixed(2)}`;
+  }
+}
+
+function updateDisplayedPrices() {
+  document.querySelectorAll('.price-input').forEach(input => { input.value = formatCurrency(BASE_ITEM_PRICE_KES); });
+  renderCart();
+  const checkoutTotal = document.getElementById('checkoutTotal');
+  if (checkoutTotal) {
+    const cart = JSON.parse(localStorage.getItem('mistizenCart') || '[]');
+    checkoutTotal.textContent = formatCurrency(cart.reduce((sum, item) => sum + priceInKes(item) * item.quantity, 0));
+  }
+}
+
+async function setupCurrencySwitcher() {
+  const selector = document.getElementById('currencySelect');
+  if (!selector) return;
+  selector.innerHTML = '<option value="KES">KES — Kenyan Shilling</option>';
+  updateDisplayedPrices();
+  try {
+    const response = await fetch('https://open.er-api.com/v6/latest/KES');
+    const data = await response.json();
+    if (data.result !== 'success' || !data.rates) throw new Error('Rates unavailable');
+    currencyRates = data.rates;
+    currencyRates.KES = 1;
+    const currencies = Object.keys(currencyRates).sort();
+    selector.innerHTML = currencies.map(code => `<option value="${code}">${code} — ${new Intl.DisplayNames([navigator.language], { type: 'currency' }).of(code) || code}</option>`).join('');
+  } catch {
+    selector.title = 'Live rates could not be loaded. Prices are shown in Kenyan Shillings.';
+  }
+  selector.value = currencyRates[selectedCurrency] ? selectedCurrency : 'KES';
+  selectedCurrency = selector.value;
+  selector.addEventListener('change', () => {
+    selectedCurrency = selector.value;
+    localStorage.setItem('mistizenCurrency', selectedCurrency);
+    updateDisplayedPrices();
+  });
+  updateDisplayedPrices();
+}
+setupCurrencySwitcher();
+renderCart();
+
+function setupCheckout() {
+  const form = document.getElementById('paymentForm');
+  const totalElement = document.getElementById('checkoutTotal');
+  if (!form || !totalElement) return;
+  const message = document.getElementById('paymentMessage');
+  const cart = JSON.parse(localStorage.getItem('mistizenCart') || '[]');
+  const total = cart.reduce((sum, item) => sum + priceInKes(item) * item.quantity, 0);
+  totalElement.textContent = formatCurrency(total);
+  let selectedMethod = 'mpesa';
+
+  const paymentFields = {
+    mpesa: `<label for="paymentPhone">M-Pesa phone number</label><input id="paymentPhone" type="tel" inputmode="tel" placeholder="254 7XX XXX XXX" required><button class="pay-now" type="submit">Request M-Pesa prompt</button>`,
+    card: `<label for="cardName">Name on card</label><input id="cardName" type="text" autocomplete="cc-name" required><label for="cardNumber">Card number</label><input id="cardNumber" type="text" inputmode="numeric" autocomplete="cc-number" placeholder="•••• •••• •••• ••••" required><button class="pay-now" type="submit">Pay with card</button>`,
+    paypal: `<p>You will be redirected securely to PayPal to complete payment.</p><button class="pay-now" type="submit">Continue to PayPal</button>`,
+    sendwave: `<p>Continue to Sendwave to complete your payment securely.</p><button class="pay-now" type="submit">Continue to Sendwave</button>`
+  };
+  function showPaymentMethod() {
+    form.innerHTML = paymentFields[selectedMethod];
+    message.textContent = '';
+  }
+  document.querySelectorAll('.payment-method').forEach(button => button.addEventListener('click', () => {
+    selectedMethod = button.dataset.payment;
+    document.querySelectorAll('.payment-method').forEach(item => item.classList.toggle('active', item === button));
+    showPaymentMethod();
+  }));
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    if (!cart.length) { message.textContent = 'Your cart is empty. Add an item before paying.'; return; }
+    const labels = { mpesa: 'M-Pesa STK prompt', card: 'card payment', paypal: 'PayPal checkout', sendwave: 'Sendwave checkout' };
+    message.textContent = `${labels[selectedMethod]} is ready to connect. Add your payment-provider credentials and secure server integration to process live payments.`;
+  });
+  showPaymentMethod();
+}
+setupCheckout();
+
+const authForm = document.getElementById('authForm');
+if (authForm) {
+  let authMode = 'login';
+  const title = document.getElementById('authTitle');
+  const subtitle = document.getElementById('authSubtitle');
+  const submit = authForm.querySelector('.auth-submit');
+  const message = document.getElementById('authMessage');
+  document.querySelectorAll('.auth-tab').forEach(tab => tab.addEventListener('click', () => {
+    authMode = tab.dataset.mode;
+    document.querySelectorAll('.auth-tab').forEach(item => item.classList.toggle('active', item === tab));
+    title.textContent = authMode === 'signup' ? 'Create your account' : 'Welcome back';
+    subtitle.textContent = authMode === 'signup' ? 'Join MISTIZEN and shop your fit.' : 'Sign in to continue shopping.';
+    submit.textContent = authMode === 'signup' ? 'Sign up with email' : 'Log in with email';
+    message.textContent = '';
+  }));
+  authForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const email = document.getElementById('authEmail').value;
+    localStorage.setItem('mistizenUser', JSON.stringify({ email, method: 'email' }));
+    message.textContent = `${authMode === 'signup' ? 'Account created' : 'Logged in'} for ${email}.`;
+  });
+  document.querySelectorAll('[data-provider]').forEach(button => button.addEventListener('click', () => {
+    const provider = button.dataset.provider;
+    localStorage.setItem('mistizenUser', JSON.stringify({ method: provider }));
+    message.textContent = `${provider} sign-in is ready to connect. Add provider credentials to enable the real secure sign-in.`;
+  }));
+}

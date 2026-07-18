@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLOSET | MISTIZEN</title>
+    <link rel="stylesheet" href="frontend.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,400;1,500;1,600;1,700&display=swap">
+</head>
+
+<body>
+    <canvas id="webCanvas"></canvas>
+    <div class="content">
+</div>
+<section class="page">
+  <div class="currency-switcher">
+    <label for="currencySelect">Currency</label>
+    <select id="currencySelect" class="currency-select" aria-label="Choose currency"></select>
+  </div>
+  <h1 class="page-title new-arrivals-title">New Arrivals</h1>
+
+  <div class="grid">
+
+    <!-- ---- Card template (copy/paste this whole block per product) ---- -->
+    <div class="card">
+      <label class="frame">
+        <div class="placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg>
+          <span><b>Click to upload</b><br>or drag a photo in</span>
+        </div>
+        <img class="preview" alt="Product">
+        <span class="swap">Change photo</span>
+        <input type="file" class="fileInput" accept="image/*">
+      </label>
+
+      <div class="name-row">
+        <label for="product-name-0" class="visually-hidden">Product name</label>
+        <input id="product-name-0" class="name-input" type="text" placeholder="Product name" maxlength="40">
+      </div>
+
+      <div class="price-row">
+        <span>$</span>
+        <label for="product-price-0" class="visually-hidden">Product price</label>
+        <input id="product-price-0" class="price-input" type="number" placeholder="0.00" min="0" step="0.01">
+      </div>
+
+      <div class="controls">
+        <div class="stepper">
+          <button class="minus" aria-label="Decrease quantity">−</button>
+          <span class="qty">1</span>
+          <button class="plus" aria-label="Increase quantity">+</button>
+        </div>
+        <div class="stock"><b class="stockLeft">12</b> in stock</div>
+      </div>
+
+      <button class="add-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.5 3h2l2.7 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21.5 7H6"/></svg>
+        Add to cart
+      </button>
+    </div>
+    <!-- ---- End card template ---- -->
+
+    <div class="card">
+      <label class="frame">
+        <div class="placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg>
+          <span><b>Click to upload</b><br>or drag a photo in</span>
+        </div>
+        <img class="preview" alt="Product">
+        <span class="swap">Change photo</span>
+        <input type="file" class="fileInput" accept="image/*">
+      </label>
+      <div class="name-row">
+        <label for="product-name-1" class="visually-hidden">Product name</label>
+        <input id="product-name-1" class="name-input" type="text" placeholder="Product name" maxlength="40">
+      </div>
+        <div class="price-row">
+          <span>$</span>
+          <label for="product-price-1" class="visually-hidden">Product price</label>
+          <input id="product-price-1" class="price-input" type="number" placeholder="0.00" min="0" step="0.01">
+        </div>
+      <div class="controls">
+        <div class="stepper">
+          <button class="minus" aria-label="Decrease quantity">−</button>
+          <span class="qty">1</span>
+          <button class="plus" aria-label="Increase quantity">+</button>
+        </div>
+        <div class="stock"><b class="stockLeft">12</b> in stock</div>
+      </div>
+      <button class="add-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.5 3h2l2.7 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21.5 7H6"/></svg>
+        Add to cart
+      </button>
+    </div>
+
+    <div class="card">
+      <label class="frame">
+        <div class="placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg>
+          <span><b>Click to upload</b><br>or drag a photo in</span>
+        </div>
+        <img class="preview" alt="Product">
+        <span class="swap">Change photo</span>
+        <input type="file" class="fileInput" accept="image/*">
+      </label>
+      <div class="name-row"><label for="product-name-2" class="visually-hidden">Product name</label><input id="product-name-2" class="name-input" type="text" placeholder="Product name" maxlength="40"></div>
+      <div class="price-row"><span>$</span><label for="product-price-2" class="visually-hidden">Product price</label><input id="product-price-2" class="price-input" type="number" placeholder="0.00" min="0" step="0.01"></div>
+      <div class="controls">
+        <div class="stepper">
+          <button class="minus" aria-label="Decrease quantity">−</button>
+          <span class="qty">1</span>
+          <button class="plus" aria-label="Increase quantity">+</button>
+        </div>
+        <div class="stock"><b class="stockLeft">12</b> in stock</div>
+      </div>
+      <button class="add-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.5 3h2l2.7 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21.5 7H6"/></svg>
+        Add to cart
+      </button>
+    </div>
+
+  </div>
+
+  <a class="scroll-cue" href="#page2">Scroll for more ↓</a>
+</section>
+
+<!-- ================= PAGE 2 ================= -->
+<section class="page" id="page2">
+  <h1 class="page-title">More Drops</h1>
+
+  <div class="grid">
+
+    <div class="card">
+      <label class="frame">
+        <div class="placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg>
+          <span><b>Click to upload</b><br>or drag a photo in</span>
+        </div>
+        <img class="preview" alt="Product">
+        <span class="swap">Change photo</span>
+        <input type="file" class="fileInput" accept="image/*">
+      </label>
+      <div class="name-row"><label for="product-name-3" class="visually-hidden">Product name</label><input id="product-name-3" class="name-input" type="text" placeholder="Product name" maxlength="40"></div>
+      <div class="price-row"><span>$</span><label for="product-price-3" class="visually-hidden">Product price</label><input id="product-price-3" class="price-input" type="number" placeholder="0.00" min="0" step="0.01"></div>
+      <div class="controls">
+        <div class="stepper">
+          <button class="minus" aria-label="Decrease quantity">−</button>
+          <span class="qty">1</span>
+          <button class="plus" aria-label="Increase quantity">+</button>
+        </div>
+        <div class="stock"><b class="stockLeft">12</b> in stock</div>
+      </div>
+      <button class="add-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.5 3h2l2.7 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21.5 7H6"/></svg>
+        Add to cart
+      </button>
+    </div>
+
+    <div class="card">
+      <label class="frame">
+        <div class="placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg>
+          <span><b>Click to upload</b><br>or drag a photo in</span>
+        </div>
+        <img class="preview" alt="Product">
+        <span class="swap">Change photo</span>
+        <input type="file" class="fileInput" accept="image/*">
+      </label>
+      <div class="name-row"><label for="product-name-4" class="visually-hidden">Product name</label><input id="product-name-4" class="name-input" type="text" placeholder="Product name" maxlength="40"></div>
+      <div class="price-row"><span>$</span><label for="product-price-4" class="visually-hidden">Product price</label><input id="product-price-4" class="price-input" type="number" placeholder="0.00" min="0" step="0.01"></div>
+      <div class="controls">
+        <div class="stepper">
+          <button class="minus" aria-label="Decrease quantity">−</button>
+          <span class="qty">1</span>
+          <button class="plus" aria-label="Increase quantity">+</button>
+        </div>
+        <div class="stock"><b class="stockLeft">12</b> in stock</div>
+      </div>
+      <button class="add-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.5 3h2l2.7 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21.5 7H6"/></svg>
+        Add to cart
+      </button>
+    </div>
+
+    <div class="card">
+      <label class="frame">
+        <div class="placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg>
+          <span><b>Click to upload</b><br>or drag a photo in</span>
+        </div>
+        <img class="preview" alt="Product">
+        <span class="swap">Change photo</span>
+        <input type="file" class="fileInput" accept="image/*">
+      </label>
+      <div class="name-row">
+        <label for="product-name-5" class="visually-hidden">Product name</label>
+        <input id="product-name-5" class="name-input" type="text" placeholder="Product name" maxlength="40">
+      </div>
+      <div class="price-row">
+        <span>$</span>
+        <label for="product-price-5" class="visually-hidden">Product price</label>
+        <input id="product-price-5" class="price-input" type="number" placeholder="0.00" min="0" step="0.01">
+      </div>
+      <div class="controls">
+        <div class="stepper">
+          <button class="minus" aria-label="Decrease quantity">−</button>
+          <span class="qty">1</span>
+          <button class="plus" aria-label="Increase quantity">+</button>
+        </div>
+        <div class="stock"><b class="stockLeft">12</b> in stock</div>
+      </div>
+      <button class="add-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.5 3h2l2.7 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21.5 7H6"/></svg>
+        </svg>
+        Add to cart
+      </button>
+    </div>
+
+  </div>
+</section>
+
+    <script src="https://cdn.jsdelivr.net/npm/tsparticles@2/tsparticles.bundle.min.js" integrity="sha384-PzjP5WjhGCjnJl2N1TyMsNPVHlwjI6u4I6FjN+kEJN5p2jxOGXV3tK5bj4k3+K9w" crossorigin="anonymous"></script>
+    <script src="script.js"></script>
+    
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CART</title>
+    <link rel="stylesheet" href="Frontend.css">
+</head>
+<body>
+      <canvas id="webCanvas"></canvas>
+    <div class="content">
+      <main class="cart-page">
+        <h1>Your Cart</h1>
+        <div class="currency-switcher">
+          <label for="currencySelect">Currency</label>
+          <select id="currencySelect" class="currency-select" aria-label="Choose currency"></select>
+        </div>
+        <div id="cartItems" class="cart-items"></div>
+        <p id="cartTotal" class="cart-total"></p>
+        <button id="clearCart" class="clear-cart" type="button">Empty cart</button>
+        <a class="checkout-button" href="checkout.html">Proceed to payment</a>
+        <a class="continue-shopping" href="PRODUCTS.html">Continue to closet</a>
+      </main>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/tsparticles@2/tsparticles.bundle.min.js" integrity="sha384-PzjP5WjhGCjnJl2N1TyMsNPVHlwjI6u4I6FjN+kEJN5p2jxOGXV3tK5bj4k3+K9w" crossorigin="anonymous"></script>
+    <script src="script.js"></script>
+
+    
+</body>
+</html>

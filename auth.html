@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account | MISTIZEN</title>
+  <link rel="stylesheet" href="Frontend.css">
+</head>
+<body class="auth-body">
+  <canvas id="webCanvas"></canvas>
+  <main class="auth-shell">
+    <section class="auth-card" aria-labelledby="authTitle">
+      <p class="auth-brand">MISTIZEN</p>
+      <h1 id="authTitle">Welcome</h1>
+      <p id="authSubtitle">Sign in to continue shopping.</p>
+
+      <div class="auth-tabs" role="tablist" aria-label="Account action">
+        <button class="auth-tab active" type="button" data-mode="login">Log in</button>
+        <button class="auth-tab" type="button" data-mode="signup">Sign up</button>
+      </div>
+
+      <div class="provider-buttons">
+        <button class="provider-btn" type="button" data-provider="Apple"><span class="provider-icon apple-icon">●</span>Continue with Apple</button>
+        <button class="provider-btn" type="button" data-provider="Google"><span class="provider-icon google-icon">G</span>Continue with Google</button>
+        <button class="provider-btn" type="button" data-provider="Yahoo"><span class="provider-icon yahoo-icon">Y!</span>Continue with Yahoo</button>
+        <button class="provider-btn" type="button" data-provider="Phone"><span class="provider-icon">☎</span>Continue with phone number</button>
+      </div>
+
+      <div class="auth-divider"><span>or continue with email</span></div>
+      <form id="authForm" class="auth-form">
+        <label for="authEmail">Email address</label>
+        <input id="authEmail" type="email" placeholder="you@example.com" required>
+        <label for="authPassword">Password</label>
+        <input id="authPassword" type="password" placeholder="At least 6 characters" minlength="6" required>
+        <button class="auth-submit" type="submit">Log in with email</button>
+      </form>
+      <p id="authMessage" class="auth-message" aria-live="polite"></p>
+      <a class="auth-back" href="Frontend.html">← Back to home</a>
+    </section>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>

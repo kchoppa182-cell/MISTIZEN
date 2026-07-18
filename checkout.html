@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkout | MISTIZEN</title>
+  <link rel="stylesheet" href="Frontend.css">
+</head>
+<body>
+  <canvas id="webCanvas"></canvas>
+  <div class="content">
+    <main class="checkout-page">
+      <a class="checkout-back" href="cart.html">← Back to cart</a>
+      <h1>Payment</h1>
+      <p class="checkout-total">Order total: <strong id="checkoutTotal">KSh 0.00</strong></p>
+      <div class="currency-switcher">
+        <label for="currencySelect">Currency</label>
+        <select id="currencySelect" class="currency-select" aria-label="Choose currency"></select>
+      </div>
+      <section class="payment-card" aria-labelledby="paymentTitle">
+        <h2 id="paymentTitle">Choose a payment method</h2>
+        <div class="payment-methods" role="radiogroup" aria-label="Payment method">
+          <button class="payment-method active" type="button" data-payment="mpesa">M-Pesa</button>
+          <button class="payment-method" type="button" data-payment="card">Visa / DTB Card</button>
+          <button class="payment-method" type="button" data-payment="paypal">PayPal</button>
+          <button class="payment-method" type="button" data-payment="sendwave">Sendwave</button>
+        </div>
+        <form id="paymentForm" class="payment-form"></form>
+        <p id="paymentMessage" class="payment-message" aria-live="polite"></p>
+      </section>
+    </main>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
