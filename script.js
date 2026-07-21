@@ -376,7 +376,7 @@ document.body.insertAdjacentHTML('afterbegin', `
     <a href="Frontend.html" aria-label="Home" title="Home"><span>⌂</span><b>Home</b></a>
     <a href="PRODUCTS.html" aria-label="Closet" title="Closet"><span>♧</span><b>CLOSET</b></a>
     <a href="cart.html" aria-label="Cart" title="Cart"><span>🛒</span><b>Cart</b></a>
-    <a href="auth.html" aria-label="Account" title="Log in or sign up"><span>◉</span><b>Account</b></a>
+    <a href="auth.html" class="account-nav-link" aria-label="Account" title="Log in or sign up"><span>◉</span><b>Login / Sign up</b></a>
   </nav>`);
 
 const sideMenu = document.querySelector('.side-menu');
