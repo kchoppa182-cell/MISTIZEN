@@ -373,10 +373,43 @@ document.querySelectorAll('.card').forEach(card => {
 document.body.insertAdjacentHTML('afterbegin', `
   <nav class="side-menu" aria-label="Main navigation">
     <span class="menu-handle" aria-hidden="true">☰</span>
-    <a href="Frontend.html" aria-label="Home" title="Home"><span>⌂</span><b>Home</b></a>
-    <a href="PRODUCTS.html" aria-label="Closet" title="Closet"><span>♧</span><b>CLOSET</b></a>
-    <a href="cart.html" aria-label="Cart" title="Cart"><span>🛒</span><b>Cart</b></a>
-    <a href="auth.html" class="account-nav-link" aria-label="Account" title="Log in or sign up"><span>◉</span><b>Login / Sign up</b></a>
+    <a href="Frontend.html" aria-label="Home" title="Home">
+      <span class="nav-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 10.5 12 4l8 6.5"></path>
+          <path d="M7 10.5V20h10V10.5"></path>
+        </svg>
+      </span>
+      <span class="nav-label">Home</span>
+    </a>
+    <a href="PRODUCTS.html" aria-label="Closet" title="Closet">
+      <span class="nav-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 7.5 12 4l5 3.5v2L12 10 7 9.5z"></path>
+          <path d="M8 9.5v7a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-7"></path>
+        </svg>
+      </span>
+      <span class="nav-label">Closet</span>
+    </a>
+    <a href="cart.html" aria-label="Cart" title="Cart">
+      <span class="nav-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 4h2l2.2 10.2a1 1 0 0 0 1 .8h8.4a1 1 0 0 0 1-.8L18 7H7"></path>
+          <circle cx="10" cy="19" r="1.4"></circle>
+          <circle cx="17" cy="19" r="1.4"></circle>
+        </svg>
+      </span>
+      <span class="nav-label">Cart</span>
+    </a>
+    <a href="auth.html" class="account-nav-link" aria-label="Account" title="Log in or sign up">
+      <span class="nav-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="4"></circle>
+          <path d="M5 19a7 7 0 0 1 14 0"></path>
+        </svg>
+      </span>
+      <span class="nav-label">Account</span>
+    </a>
   </nav>`);
 
 const sideMenu = document.querySelector('.side-menu');
