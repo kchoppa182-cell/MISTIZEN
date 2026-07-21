@@ -283,28 +283,20 @@ window.addEventListener('keydown', event => { if (event.key === 'Escape') closeI
 // FRONTEND CONCEPT: each product card owns its own image gallery, quantity
 // state, and Add to cart event handlers.
 document.querySelectorAll('.card').forEach(card => {
-  const frame     = card.querySelector('.frame');
-  const fileInput = card.querySelector('.fileInput');
-  const preview   = card.querySelector('.preview');
+  const frame = card.querySelector('.frame');
+  const preview = card.querySelector('.preview');
 
-  const qtyEl       = card.querySelector('.qty');
-  const minusBtn    = card.querySelector('.minus');
-  const plusBtn     = card.querySelector('.plus');
+  const qtyEl = card.querySelector('.qty');
+  const minusBtn = card.querySelector('.minus');
+  const plusBtn = card.querySelector('.plus');
   const stockLeftEl = card.querySelector('.stockLeft');
-  const addBtn      = card.querySelector('.add-btn');
-
-  // Products are priced at KSh 1,200; the visible amount is converted when needed.
-  const priceInput = card.querySelector('.price-input');
-  priceInput.type = 'text';
-  priceInput.readOnly = true;
+  const addBtn = card.querySelector('.add-btn');
+  const nameDisplay = card.querySelector('.name-display');
 
   let qty = 1;
   let images = (card.dataset.images || '').split(',').map(image => image.trim()).filter(Boolean);
   let activeImage = 0;
-  fileInput.multiple = true;
-  // FileReader keeps the original file data intact; no image compression is applied.
-  fileInput.accept = 'image/jpeg,image/png,image/webp,image/avif';
-  fileInput.setAttribute('aria-label', 'Add product photos');
+
   frame.insertAdjacentHTML('beforeend', `
     <button class="gallery-arrow gallery-prev" type="button" aria-label="Previous photo">‹</button>
     <button class="gallery-arrow gallery-next" type="button" aria-label="Next photo">›</button>
@@ -321,7 +313,6 @@ document.querySelectorAll('.card').forEach(card => {
     previousImage.hidden = nextImage.hidden = images.length < 2;
   }
 
-  // Store-supplied photos are displayed immediately; uploads can still replace them.
   if (images.length) showImage();
 
   function moveImage(step) {
@@ -343,46 +334,13 @@ document.querySelectorAll('.card').forEach(card => {
     moveImage(index === 0 ? -1 : 1);
   }));
 
-  fileInput.addEventListener('change', () => {
-    const files = Array.from(fileInput.files).filter(file => file.type.startsWith('image/'));
-    if (!files.length) return;
-    Promise.all(files.map(file => new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = event => resolve(event.target.result);
-      reader.readAsDataURL(file);
-    }))).then(photoUrls => {
-      images = photoUrls;
-      activeImage = 0;
-      showImage();
-    });
-  });
-
-  ['dragover', 'dragenter'].forEach(evt =>
-    frame.addEventListener(evt, e => {
-      e.preventDefault();
-      frame.style.borderColor = 'var(--accent)';
-    })
-  );
-  ['dragleave', 'drop'].forEach(evt =>
-    frame.addEventListener(evt, e => {
-      e.preventDefault();
-      frame.style.borderColor = '';
-    })
-  );
-  frame.addEventListener('drop', e => {
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      fileInput.files = e.dataTransfer.files;
-      fileInput.dispatchEvent(new Event('change'));
-    }
-  });
-
   function renderQty() {
     qtyEl.textContent = qty;
     minusBtn.disabled = qty <= 1;
     plusBtn.disabled = qty >= STOCK_TOTAL;
     stockLeftEl.textContent = STOCK_TOTAL - qty + 1;
   }
+
   minusBtn.addEventListener('click', () => { if (qty > 1) { qty--; renderQty(); } });
   plusBtn.addEventListener('click', () => { if (qty < STOCK_TOTAL) { qty++; renderQty(); } });
   renderQty();
@@ -391,7 +349,7 @@ document.querySelectorAll('.card').forEach(card => {
 
   addBtn.addEventListener('click', () => {
     const item = {
-      name: card.querySelector('.name-input').value.trim() || 'Untitled product',
+      name: nameDisplay.textContent.trim() || 'Untitled product',
       price: BASE_ITEM_PRICE_KES,
       quantity: qty
     };
@@ -540,10 +498,8 @@ function formatCurrency(amountKes) {
 }
 
 function updateDisplayedPrices() {
-  document.querySelectorAll('.price-input').forEach(input => { input.value = formatCurrency(BASE_ITEM_PRICE_KES); });
-  document.querySelectorAll('.price-row > span').forEach(marker => {
-    marker.textContent = '';
-    marker.setAttribute('aria-hidden', 'true');
+  document.querySelectorAll('.price-display').forEach(display => {
+    display.textContent = formatCurrency(BASE_ITEM_PRICE_KES);
   });
   renderCart();
   const checkoutTotal = document.getElementById('checkoutTotal');
