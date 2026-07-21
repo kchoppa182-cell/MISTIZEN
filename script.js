@@ -423,6 +423,12 @@ document.body.insertAdjacentHTML('afterbegin', `
 
 const sideMenu = document.querySelector('.side-menu');
 const menuHandle = document.querySelector('.menu-handle');
+const menuBackdrop = document.createElement('button');
+menuBackdrop.className = 'menu-backdrop';
+menuBackdrop.type = 'button';
+menuBackdrop.tabIndex = -1;
+menuBackdrop.setAttribute('aria-label', 'Close navigation menu');
+document.body.append(menuBackdrop);
 if (sideMenu && menuHandle) {
   menuHandle.removeAttribute('aria-hidden');
   menuHandle.setAttribute('role', 'button');
@@ -440,7 +446,12 @@ if (sideMenu && menuHandle) {
     const isOpen = sideMenu.classList.toggle('is-open');
     menuHandle.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
     menuHandle.setAttribute('aria-expanded', String(isOpen));
+    menuBackdrop.classList.toggle('is-visible', isOpen);
   }
+  menuBackdrop.addEventListener('click', toggleMenu);
+  window.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && sideMenu.classList.contains('is-open')) toggleMenu();
+  });
 }
 
 if (sideMenu) {
