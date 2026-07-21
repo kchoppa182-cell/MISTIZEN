@@ -11,11 +11,13 @@ from pathlib import Path
 from urllib.request import urlopen
 
 try:
-    from flask import Flask, jsonify, request, send_from_directory, session  # type: ignore[import]
+    from flask import Flask, jsonify, redirect, request, send_from_directory, session, url_for  # type: ignore[import]
+    from authlib.integrations.flask_client import OAuth  # type: ignore[import]
+    from authlib.integrations.base_client.errors import OAuthError  # type: ignore[import]
 except ImportError as exc:
     raise RuntimeError(
-        "Flask is required to run this application. Install it with "
-        "'python -m pip install flask' and rerun."
+        "Project dependencies are required to run this application. Install them with "
+        "'python -m pip install -r requirements.txt' and rerun."
     ) from exc
 
 ROOT = Path(__file__).resolve().parent
@@ -38,17 +40,29 @@ def check_password_hash(password_hash, password):
 
 DATABASE = ROOT / "mistizen.db"
 PAGES = {"Frontend.html", "PRODUCTS.html", "cart.html", "auth.html", "checkout.html"}
-ASSETS = {"Frontend.css", "script.js", "162113.jpg"}
+ASSETS = {"Frontend.css", "script.js", "162113.jpg", "white-removebg-preview.png"}
 BASE_PRICE_KES = 1200
 
 app = Flask(__name__)
 # Set MISTIZEN_SECRET_KEY in production; a temporary key is only for local development.
+# CSRF protection is enabled via the protect_csrf() middleware for all state-changing requests.
 app.config.update(
     SECRET_KEY=os.environ.get("MISTIZEN_SECRET_KEY", secrets.token_urlsafe(32)),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("MISTIZEN_HTTPS") == "1",
 )
+
+oauth = OAuth(app)
+google = None
+if os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET"):
+    google = oauth.register(
+        name="google",
+        client_id=os.environ["GOOGLE_CLIENT_ID"],
+        client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        client_kwargs={"scope": "openid email profile"},
+    )
 
 
 def get_csrf_token():
@@ -133,6 +147,11 @@ def page(page):
     return "Not found", 404
 
 
+@app.get("/assets/<path:filename>")
+def asset(filename):
+    return send_from_directory(ROOT / "assets", filename)
+
+
 @app.post("/api/auth/<action>")
 def auth(action):
     if action not in {"signup", "login"}:
@@ -155,6 +174,50 @@ def auth(action):
             user_id = user["id"]
     session["user_id"] = user_id
     return jsonify(ok=True, email=email)
+
+
+@app.get("/api/auth/google")
+def google_login():
+    if google is None:
+        return "Google sign-in has not been configured on this server.", 503
+    redirect_uri = os.environ.get("GOOGLE_REDIRECT_URI") or url_for("google_callback", _external=True)
+    return google.authorize_redirect(redirect_uri)
+
+
+@app.get("/api/auth/google/callback")
+def google_callback():
+    if google is None:
+        return "Google sign-in has not been configured on this server.", 503
+    if request.args.get("error"):
+        return redirect("/auth.html?error=google_cancelled")
+    try:
+        token = google.authorize_access_token()
+        userinfo = token.get("userinfo", {})
+    except OAuthError:
+        return redirect("/auth.html?error=google_failed")
+
+    email = str(userinfo.get("email", "")).strip().lower()
+    if not email or not userinfo.get("email_verified"):
+        return redirect("/auth.html?error=google_unverified")
+
+    with db() as connection:
+        user = connection.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        if user:
+            user_id = user["id"]
+        else:
+            # Password sign-in remains unavailable for OAuth-only accounts.
+            cursor = connection.execute(
+                "INSERT INTO users (email, password_hash) VALUES (?, ?)",
+                (email, generate_password_hash(secrets.token_urlsafe(32))),
+            )
+            user_id = cursor.lastrowid
+
+    cart_id = session.get("cart_id")
+    session.clear()
+    session["user_id"] = user_id
+    if cart_id:
+        session["cart_id"] = cart_id
+    return redirect("/PRODUCTS.html")
 
 
 @app.route("/api/cart", methods=["GET", "POST", "DELETE"])
@@ -228,4 +291,5 @@ def rates():
 
 if __name__ == "__main__":
     initialise_database()
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    # PORT is supplied by most hosting platforms.  Locally this stays on 5000.
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")), debug=False)

@@ -49,13 +49,17 @@
     constructor({ cx, cy, radius, spokes, rings, startAngle, endAngle, depth }) {
       this.points = [];
       this.depth = depth; // 0 = no parallax movement, 1 = full movement
+      this.silkOpacity = 0.30 + Math.random() * 0.18;
+      this.dewDrops = [];
       const angleStep = (endAngle - startAngle) / (spokes - 1);
 
       for (let s = 0; s < spokes; s++) {
         const angle = startAngle + s * angleStep;
         const col = [];
         for (let r = 0; r < rings; r++) {
-          const dist = radius * ((r + 1) / rings);
+          // Real capture silk is never perfectly even; subtle variation makes
+          // each ring look hand-spun while preserving the web's overall shape.
+          const dist = radius * ((r + 1) / rings) * (0.96 + Math.random() * 0.08);
           const x = cx + Math.cos(angle) * dist;
           const y = cy + Math.sin(angle) * dist;
           const isOuterAnchor = (r === rings - 1);
@@ -67,6 +71,14 @@
           });
         }
         this.points.push(col);
+      }
+
+      for (let i = 0; i < Math.max(4, Math.floor(rings * 1.5)); i++) {
+        this.dewDrops.push({
+          spoke: Math.floor(Math.random() * spokes),
+          ring: Math.floor(Math.random() * rings),
+          size: 0.7 + Math.random() * 1.15
+        });
       }
 
       this.centerFixed = { x: cx, y: cy };
@@ -104,8 +116,13 @@
       // shift the whole web by its own depth-scaled parallax offset
       ctx.translate(parallaxOffsetX * this.depth, parallaxOffsetY * this.depth);
 
-      ctx.strokeStyle = 'rgb(1, 2, 1)';
-      ctx.lineWidth = 2;
+      const isLightTheme = document.body.classList.contains('light-theme');
+      ctx.strokeStyle = isLightTheme
+        ? 'rgba(8, 12, 10, 0.9)'
+        : `rgba(0, 0, 0, ${this.silkOpacity + 0.28})`;
+      ctx.lineWidth = 2.15;
+      ctx.shadowColor = isLightTheme ? 'rgba(255, 255, 255, 0.35)' : 'rgba(0, 0, 0, 0.4)';
+      ctx.shadowBlur = 1;
 
       for (const col of this.points) {
         ctx.beginPath();
@@ -118,13 +135,27 @@
 
       const rings = this.points[0].length;
       for (let r = 0; r < rings; r++) {
+        const ringPoints = this.points.map(col => col[r]);
         ctx.beginPath();
-        for (let s = 0; s < this.points.length; s++) {
-          const p = this.points[s][r];
-          if (s === 0) ctx.moveTo(p.x, p.y);
-          else ctx.lineTo(p.x, p.y);
+        const first = ringPoints[0];
+        const last = ringPoints[ringPoints.length - 1];
+        ctx.moveTo(first.x, first.y);
+        for (let s = 1; s < ringPoints.length - 1; s++) {
+          const p = ringPoints[s];
+          const next = ringPoints[s + 1];
+          ctx.quadraticCurveTo(p.x, p.y, (p.x + next.x) / 2, (p.y + next.y) / 2);
         }
+        ctx.lineTo(last.x, last.y);
         ctx.stroke();
+      }
+
+      ctx.shadowBlur = 0;
+      for (const drop of this.dewDrops) {
+        const point = this.points[drop.spoke][drop.ring];
+        ctx.beginPath();
+        ctx.fillStyle = isLightTheme ? 'rgba(8, 12, 10, 0.7)' : 'rgba(0, 0, 0, 0.55)';
+        ctx.arc(point.x, point.y, drop.size, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       ctx.restore();
@@ -204,7 +235,7 @@ document.querySelectorAll('.card').forEach(card => {
   priceInput.readOnly = true;
 
   let qty = 1;
-  let images = [];
+  let images = (card.dataset.images || '').split(',').map(image => image.trim()).filter(Boolean);
   let activeImage = 0;
   fileInput.multiple = true;
   // FileReader keeps the original file data intact; no image compression is applied.
@@ -225,6 +256,9 @@ document.querySelectorAll('.card').forEach(card => {
     imageCount.textContent = images.length > 1 ? `${activeImage + 1} / ${images.length}` : '';
     previousImage.hidden = nextImage.hidden = images.length < 2;
   }
+
+  // Store-supplied photos are displayed immediately; uploads can still replace them.
+  if (images.length) showImage();
 
   function moveImage(step) {
     if (images.length < 2) return;
@@ -321,6 +355,43 @@ document.body.insertAdjacentHTML('afterbegin', `
     <a href="auth.html" aria-label="Account" title="Log in or sign up"><span>◉</span><b>Account</b></a>
   </nav>`);
 
+const sideMenu = document.querySelector('.side-menu');
+const menuHandle = document.querySelector('.menu-handle');
+if (sideMenu && menuHandle) {
+  menuHandle.removeAttribute('aria-hidden');
+  menuHandle.setAttribute('role', 'button');
+  menuHandle.setAttribute('tabindex', '0');
+  menuHandle.setAttribute('aria-label', 'Open navigation menu');
+  menuHandle.addEventListener('click', toggleMenu);
+  menuHandle.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleMenu();
+    }
+  });
+  function toggleMenu() {
+    const isOpen = sideMenu.classList.toggle('is-open');
+    menuHandle.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
+  }
+}
+
+if (sideMenu) {
+  sideMenu.insertAdjacentHTML('beforeend', '<button class="theme-toggle" type="button" aria-pressed="false">Light mode</button>');
+  const themeToggle = sideMenu.querySelector('.theme-toggle');
+  const savedTheme = localStorage.getItem('mistizenTheme');
+  const useLightTheme = savedTheme === 'light' || (!savedTheme && window.matchMedia('(prefers-color-scheme: light)').matches);
+
+  function setTheme(isLight) {
+    document.body.classList.toggle('light-theme', isLight);
+    themeToggle.textContent = isLight ? 'Dark mode' : 'Light mode';
+    themeToggle.setAttribute('aria-pressed', String(isLight));
+    localStorage.setItem('mistizenTheme', isLight ? 'light' : 'dark');
+  }
+
+  setTheme(useLightTheme);
+  themeToggle.addEventListener('click', () => setTheme(!document.body.classList.contains('light-theme')));
+}
+
 function renderCart() {
   const cartItems = document.getElementById('cartItems');
   const cartTotal = document.getElementById('cartTotal');
@@ -355,7 +426,22 @@ if (clearCartButton) {
   });
 }
 let selectedCurrency = localStorage.getItem('mistizenCurrency') || 'KES';
-let currencyRates = { KES: 1 };
+const fallbackCurrencyRates = { KES: 1, USD: 0.0077, EUR: 0.0071, GBP: 0.0060 };
+let currencyRates = { ...fallbackCurrencyRates };
+
+function currencyName(code) {
+  try {
+    return new Intl.DisplayNames([navigator.language], { type: 'currency' }).of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+function renderCurrencyOptions(selector) {
+  selector.innerHTML = Object.keys(currencyRates).sort().map(code =>
+    `<option value="${code}">${code} — ${currencyName(code)}</option>`
+  ).join('');
+}
 
 function priceInKes(item) {
   return Number(item.price || item.baseKes || BASE_ITEM_PRICE_KES);
@@ -372,6 +458,10 @@ function formatCurrency(amountKes) {
 
 function updateDisplayedPrices() {
   document.querySelectorAll('.price-input').forEach(input => { input.value = formatCurrency(BASE_ITEM_PRICE_KES); });
+  document.querySelectorAll('.price-row > span').forEach(marker => {
+    marker.textContent = '';
+    marker.setAttribute('aria-hidden', 'true');
+  });
   renderCart();
   const checkoutTotal = document.getElementById('checkoutTotal');
   if (checkoutTotal) {
@@ -384,16 +474,20 @@ async function setupCurrencySwitcher() {
   const selector = document.getElementById('currencySelect');
   if (!selector) return;
   selector.innerHTML = '<option value="KES">KES — Kenyan Shilling</option>';
+  renderCurrencyOptions(selector);
+  selector.value = currencyRates[selectedCurrency] ? selectedCurrency : 'KES';
   updateDisplayedPrices();
   try {
-    const response = await fetch('https://open.er-api.com/v6/latest/KES');
+    const response = await fetch('/api/rates');
     const data = await response.json();
     if (data.result !== 'success' || !data.rates) throw new Error('Rates unavailable');
     currencyRates = data.rates;
     currencyRates.KES = 1;
     const currencies = Object.keys(currencyRates).sort();
     selector.innerHTML = currencies.map(code => `<option value="${code}">${code} — ${new Intl.DisplayNames([navigator.language], { type: 'currency' }).of(code) || code}</option>`).join('');
+    renderCurrencyOptions(selector);
   } catch {
+    renderCurrencyOptions(selector);
     selector.title = 'Live rates could not be loaded. Prices are shown in Kenyan Shillings.';
   }
   selector.value = currencyRates[selectedCurrency] ? selectedCurrency : 'KES';
@@ -424,9 +518,21 @@ function setupCheckout() {
     paypal: `<p>You will be redirected securely to PayPal to complete payment.</p><button class="pay-now" type="submit">Continue to PayPal</button>`,
     sendwave: `<p>Continue to Sendwave to complete your payment securely.</p><button class="pay-now" type="submit">Continue to Sendwave</button>`
   };
+  paymentFields.card = `<label for="cardName">Name on card</label><input id="cardName" type="text" autocomplete="cc-name" placeholder="Name as shown on card" required><label for="cardNumber">Card number</label><input id="cardNumber" type="text" inputmode="numeric" autocomplete="cc-number" placeholder="1234 5678 9012 3456" minlength="13" maxlength="23" required><div class="card-security-row"><div><label for="cardExpiry">Expiry date</label><input id="cardExpiry" type="text" inputmode="numeric" autocomplete="cc-exp" placeholder="MM / YY" maxlength="7" required></div><div><label for="cardCvc">CVC</label><input id="cardCvc" type="text" inputmode="numeric" autocomplete="cc-csc" placeholder="123" minlength="3" maxlength="4" required></div></div><button class="pay-now" type="submit">Pay with card</button>`;
   function showPaymentMethod() {
     form.innerHTML = paymentFields[selectedMethod];
     message.textContent = '';
+    const cardNumber = document.getElementById('cardNumber');
+    const cardExpiry = document.getElementById('cardExpiry');
+    const cardCvc = document.getElementById('cardCvc');
+    if (cardNumber) cardNumber.addEventListener('input', () => {
+      cardNumber.value = cardNumber.value.replace(/\D/g, '').slice(0, 19).replace(/(.{4})/g, '$1 ').trim();
+    });
+    if (cardExpiry) cardExpiry.addEventListener('input', () => {
+      const digits = cardExpiry.value.replace(/\D/g, '').slice(0, 4);
+      cardExpiry.value = digits.length > 2 ? `${digits.slice(0, 2)} / ${digits.slice(2)}` : digits;
+    });
+    if (cardCvc) cardCvc.addEventListener('input', () => { cardCvc.value = cardCvc.value.replace(/\D/g, '').slice(0, 4); });
   }
   document.querySelectorAll('.payment-method').forEach(button => button.addEventListener('click', () => {
     selectedMethod = button.dataset.payment;
@@ -436,6 +542,21 @@ function setupCheckout() {
   form.addEventListener('submit', event => {
     event.preventDefault();
     if (!cart.length) { message.textContent = 'Your cart is empty. Add an item before paying.'; return; }
+    if (selectedMethod === 'card') {
+      const number = document.getElementById('cardNumber').value.replace(/\s/g, '');
+      const expiry = document.getElementById('cardExpiry').value.match(/^(0[1-9]|1[0-2])\s*\/\s*(\d{2})$/);
+      const cvc = document.getElementById('cardCvc').value;
+      const luhnValid = number.length >= 13 && [...number].reverse().reduce((sum, digit, index) => {
+        let value = Number(digit);
+        if (index % 2) value = value > 4 ? value * 2 - 9 : value * 2;
+        return sum + value;
+      }, 0) % 10 === 0;
+      const now = new Date();
+      const expiryValid = expiry && new Date(2000 + Number(expiry[2]), Number(expiry[1]), 0) >= new Date(now.getFullYear(), now.getMonth(), 1);
+      if (!luhnValid) { message.textContent = 'Enter a valid card number.'; return; }
+      if (!expiryValid) { message.textContent = 'Enter a valid, unexpired expiry date.'; return; }
+      if (!/^\d{3,4}$/.test(cvc)) { message.textContent = 'Enter a valid 3- or 4-digit CVC.'; return; }
+    }
     const labels = { mpesa: 'M-Pesa STK prompt', card: 'card payment', paypal: 'PayPal checkout', sendwave: 'Sendwave checkout' };
     message.textContent = `${labels[selectedMethod]} is ready to connect. Add your payment-provider credentials and secure server integration to process live payments.`;
   });
@@ -466,6 +587,10 @@ if (authForm) {
   });
   document.querySelectorAll('[data-provider]').forEach(button => button.addEventListener('click', () => {
     const provider = button.dataset.provider;
+    if (provider === 'Google') {
+      window.location.href = '/api/auth/google';
+      return;
+    }
     localStorage.setItem('mistizenUser', JSON.stringify({ method: provider }));
     message.textContent = `${provider} sign-in is ready to connect. Add provider credentials to enable the real secure sign-in.`;
   }));

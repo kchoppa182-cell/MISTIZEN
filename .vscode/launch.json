@@ -1,88 +1,15 @@
 {
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Attach to Chrome",
-      "port": 9222,
-      "request": "attach",
-      "type": "chrome",
-      "webRoot": "${workspaceFolder}"
-    },
-    {
-      "name": "Launch Chrome",
-      "request": "launch",
-      "type": "chrome",
-      "url": "http://localhost:8080",
-      "webRoot": "${workspaceFolder}"
-    },
-    {
-      "name": "Python Debugger: Django",
-      "type": "debugpy",
-      "request": "launch",
-      "args": [
-        "runserver"
-      ],
-      "django": true,
-      "autoStartBrowser": false,
-      "program": "${workspaceFolder}\\manage.py"
-    },
-    {
-      "name": "Python Debugger: Flask",
-      "type": "debugpy",
-      "request": "launch",
-      "args": [
-        "run"
-      ],
-      "program": "${workspaceFolder}\\app.py"
-    },
-    {
-      "name": "Python Debugger: FastAPI",
-      "type": "debugpy",
-      "request": "launch",
-      "args": [
-        "run"
-      ],
-      "program": "${workspaceFolder}\\main.py"
-    },
-    {
-      "name": "Python Debugger: Script",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "${file}"
-    },
-    {
-      "name": "Python Debugger: Module",
-      "type": "debugpy",
-      "request": "launch",
-      "module": "${input:moduleName}"
-    },
-    {
-      "name": "Python Debugger: Attach",
-      "type": "debugpy",
-      "request": "attach",
-      "connect": {
-        "host": "${input:host}",
-        "port": "${input:port}"
-      }
-    },
-    {
-      "name": "C/C++ Runner: Debug Session",
-      "type": "cppdbg",
-      "request": "launch",
-      "args": [],
-      "stopAtEntry": false,
-      "externalConsole": true,
-      "cwd": "c:/Users/HP/OneDrive/Documents/MISTIZEN 2",
-      "program": "c:/Users/HP/OneDrive/Documents/MISTIZEN 2/build/Debug/outDebug",
-      "MIMode": "gdb",
-      "miDebuggerPath": "gdb",
-      "setupCommands": [
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
         {
-          "description": "Enable pretty-printing for gdb",
-          "text": "-enable-pretty-printing",
-          "ignoreFailures": true
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch Chrome against localhost",
+            "url": "http://localhost:5000",
+            "webRoot": "${workspaceFolder}"
         }
-      ]
-    }
-  ]
+    ]
 }
