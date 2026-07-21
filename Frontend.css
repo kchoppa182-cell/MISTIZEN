@@ -378,7 +378,8 @@ body.light-theme .gallery-arrow,body.light-theme .gallery-count{background:#ffff
   .side-menu{top:0;left:0;display:flex;align-items:center;gap:8px;width:100%;min-height:72px;padding:10px max(32px,calc((100vw - 1180px)/2));transform:none;border:0;border-bottom:1px solid #ffffff1c;border-radius:0;background:#090908d9;box-shadow:0 10px 30px #0004;backdrop-filter:blur(14px);}
   .side-menu::before{content:'MISTIZEN';margin-right:auto;color:var(--accent);font:800 17px 'Inter',sans-serif;letter-spacing:.18em;}
   .side-menu a{display:inline-flex;align-items:center;min-height:42px;padding:10px 14px;border:1px solid transparent;border-radius:8px;color:var(--paper);font:700 12px 'Inter',sans-serif;letter-spacing:.08em;text-transform:uppercase;}
-  .side-menu a span{display:none;}
+  .side-menu a .nav-icon{width:24px;height:24px;border-radius:8px;}
+  .side-menu a .nav-label{display:inline-block;}
   .side-menu a:hover{border-color:var(--accent);background:transparent;color:var(--accent);}
   .menu-handle{display:none;}
   .theme-toggle{width:auto;margin:0 0 0 8px;padding:10px 12px;border-color:#ffffff38;border-radius:8px;white-space:nowrap;}
@@ -389,7 +390,7 @@ body.light-theme .gallery-arrow,body.light-theme .gallery-count{background:#ffff
   .side-menu.is-open{transform:translateX(0);}
   .side-menu::before{display:none;}
   .side-menu a{display:flex;align-items:center;min-height:52px;padding:0 15px;border:1px solid #ffffff16;border-radius:12px;background:#ffffff08;color:var(--paper);font-size:14px;letter-spacing:.08em;}
-  .side-menu a span{display:none;}
+  .side-menu a .nav-label{display:inline-block;}
   .side-menu a:hover,.side-menu a:focus-visible{border-color:var(--accent);background:var(--accent);color:var(--ink);outline:0;}
   .menu-handle{top:18px;right:-68px;display:grid;width:54px;height:54px;border:1px solid #ffffff30;border-radius:50%;background:#10100ff2;box-shadow:0 10px 25px #0008;color:var(--accent);font-size:0;backdrop-filter:blur(10px);}
   .menu-handle::before{content:'\2630';font:27px/1 Arial,sans-serif;}
