@@ -1,5 +1,25 @@
 # MISTIZEN
 
+## How the project is organized
+
+### Frontend (runs in the browser)
+
+- `Frontend.html`, `PRODUCTS.html`, `cart.html`, `checkout.html`, and `auth.html` provide the page structure.
+- `Frontend.css` defines the shared visual system, responsive product grid, animations, and light theme.
+- `script.js` adds interaction: product galleries, quantities, navigation, local cart storage, currency conversion, authentication requests, and checkout form behavior.
+- The cart and currency selection are saved in `localStorage`, so they remain available while the shopper moves between pages in the same browser.
+
+### Backend (runs on the server)
+
+- `app.py` is a Flask server. It serves pages/assets and exposes JSON API endpoints for authentication, carts, orders, CSRF tokens, and exchange rates.
+- `mistizen.db` is the SQLite database. It stores users, server-side carts, cart items, and created orders.
+- Browser sessions are signed cookies that identify a shopper and their cart; passwords are salted and hashed before storage.
+- Google login is optional OAuth integration. Payment routes create demo orders only until a real payment provider is configured.
+
+### Request flow
+
+`HTML page -> script.js event/fetch -> Flask route in app.py -> SQLite/external service -> JSON response -> updated browser UI`
+
 ## Run on your computer
 
 1. Open this folder in VS Code.

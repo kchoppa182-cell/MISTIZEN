@@ -198,9 +198,71 @@
   animate();
 })();
 
+// HOME EXPERIENCE: a down-scroll (wheel, swipe, or keyboard) moves from the
+// landing page into the catalogue. The foreground brand moves separately from
+// the already-parallaxed canvas to make the page feel layered.
+function setupHomeScrollNavigation() {
+  const home = document.querySelector('.home-content');
+  const stage = document.querySelector('.home-parallax-stage');
+  if (!home || !stage) return;
 
+  let isNavigating = false;
+  let touchStartY = null;
+  const enterCloset = () => {
+    if (isNavigating) return;
+    isNavigating = true;
+    home.classList.add('is-leaving');
+    window.setTimeout(() => { window.location.href = 'PRODUCTS.html'; }, 420);
+  };
+
+  window.addEventListener('mousemove', event => {
+    const x = (event.clientX / window.innerWidth - 0.5) * 2;
+    const y = (event.clientY / window.innerHeight - 0.5) * 2;
+    stage.style.transform = `translate3d(${x * 14}px, ${y * 10}px, 0)`;
+  });
+  window.addEventListener('mouseleave', () => { stage.style.transform = ''; });
+
+  window.addEventListener('wheel', event => {
+    if (event.deltaY <= 8 || isNavigating) return;
+    event.preventDefault();
+    enterCloset();
+  }, { passive: false });
+  window.addEventListener('touchstart', event => { touchStartY = event.touches[0]?.clientY ?? null; }, { passive: true });
+  window.addEventListener('touchend', event => {
+    if (touchStartY !== null && touchStartY - event.changedTouches[0].clientY > 55) enterCloset();
+    touchStartY = null;
+  }, { passive: true });
+  window.addEventListener('keydown', event => {
+    if (['ArrowDown', 'PageDown', ' '].includes(event.key)) {
+      event.preventDefault();
+      enterCloset();
+    }
+  });
+}
+setupHomeScrollNavigation();
+
+// MOUSE-WHEEL NAVIGATION: at the top of the catalogue, an upward wheel scroll
+// returns to the home page. Normal scrolling inside the catalogue is unchanged.
+function setupCatalogueScrollBack() {
+  if (document.querySelector('.home-content') || !document.querySelector('.page')) return;
+  let isNavigating = false;
+  window.addEventListener('wheel', event => {
+    if (window.scrollY > 2 || event.deltaY >= -8 || isNavigating) return;
+    event.preventDefault();
+    isNavigating = true;
+    document.body.classList.add('page-leaving');
+    window.setTimeout(() => { window.location.href = 'Frontend.html'; }, 360);
+  }, { passive: false });
+}
+setupCatalogueScrollBack();
+
+
+// FRONTEND CONCEPT: this file runs in the browser and connects page elements,
+// local browser storage, and server APIs to create interactive UI behavior.
 const STOCK_TOTAL = 12; // default stock per card
 const BASE_ITEM_PRICE_KES = 1200;
+// FRONTEND CONCEPT: the reusable lightbox is inserted once and opened whenever
+// a product image is selected.
 document.body.insertAdjacentHTML('beforeend', `
   <div id="imageLightbox" class="image-lightbox" role="dialog" aria-modal="true" aria-label="Enlarged product photo" hidden>
     <button class="lightbox-close" type="button" aria-label="Close enlarged photo">×</button>
@@ -218,6 +280,8 @@ imageLightbox.querySelector('.lightbox-close').addEventListener('click', closeIm
 imageLightbox.addEventListener('click', event => { if (event.target === imageLightbox) closeImageLightbox(); });
 window.addEventListener('keydown', event => { if (event.key === 'Escape') closeImageLightbox(); });
 
+// FRONTEND CONCEPT: each product card owns its own image gallery, quantity
+// state, and Add to cart event handlers.
 document.querySelectorAll('.card').forEach(card => {
   const frame     = card.querySelector('.frame');
   const fileInput = card.querySelector('.fileInput');
@@ -346,6 +410,8 @@ document.querySelectorAll('.card').forEach(card => {
   });
 });
 
+// FRONTEND CONCEPT: shared navigation is generated once so every HTML page
+// receives the same menu without duplicating its markup.
 document.body.insertAdjacentHTML('afterbegin', `
   <nav class="side-menu" aria-label="Main navigation">
     <span class="menu-handle" aria-hidden="true">☰</span>
@@ -362,6 +428,7 @@ if (sideMenu && menuHandle) {
   menuHandle.setAttribute('role', 'button');
   menuHandle.setAttribute('tabindex', '0');
   menuHandle.setAttribute('aria-label', 'Open navigation menu');
+  menuHandle.setAttribute('aria-expanded', 'false');
   menuHandle.addEventListener('click', toggleMenu);
   menuHandle.addEventListener('keydown', event => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -372,6 +439,7 @@ if (sideMenu && menuHandle) {
   function toggleMenu() {
     const isOpen = sideMenu.classList.toggle('is-open');
     menuHandle.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
+    menuHandle.setAttribute('aria-expanded', String(isOpen));
   }
 }
 
@@ -392,6 +460,8 @@ if (sideMenu) {
   themeToggle.addEventListener('click', () => setTheme(!document.body.classList.contains('light-theme')));
 }
 
+// FRONTEND CONCEPT: cart data is stored in localStorage, so it survives page
+// navigation in the same browser. renderCart turns that data into HTML.
 function renderCart() {
   const cartItems = document.getElementById('cartItems');
   const cartTotal = document.getElementById('cartTotal');
@@ -425,6 +495,8 @@ if (clearCartButton) {
     renderCart();
   });
 }
+// FRONTEND CONCEPT: currency preference is persisted in localStorage. Prices
+// are stored as KES amounts and formatted only when displayed.
 let selectedCurrency = localStorage.getItem('mistizenCurrency') || 'KES';
 const fallbackCurrencyRates = { KES: 1, USD: 0.0077, EUR: 0.0071, GBP: 0.0060 };
 let currencyRates = { ...fallbackCurrencyRates };
@@ -470,6 +542,8 @@ function updateDisplayedPrices() {
   }
 }
 
+// FRONTEND CONCEPT: async/await lets the UI request live exchange rates without
+// freezing the page; fallback rates keep the selector useful offline.
 async function setupCurrencySwitcher() {
   const selector = document.getElementById('currencySelect');
   if (!selector) return;
@@ -502,6 +576,8 @@ async function setupCurrencySwitcher() {
 setupCurrencySwitcher();
 renderCart();
 
+// FRONTEND CONCEPT: checkout switches form fields based on the chosen payment
+// method and sends the final order to the backend API.
 function setupCheckout() {
   const form = document.getElementById('paymentForm');
   const totalElement = document.getElementById('checkoutTotal');
