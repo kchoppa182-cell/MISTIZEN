@@ -256,6 +256,21 @@ function setupCatalogueScrollBack() {
 }
 setupCatalogueScrollBack();
 
+function setupAboutSectionTransition() {
+  const aboutSection = document.getElementById('about-section');
+  if (!aboutSection) return;
+
+  const toggleAboutState = () => {
+    const rect = aboutSection.getBoundingClientRect();
+    const isActive = rect.top < window.innerHeight * 0.65 && rect.bottom > 120;
+    document.body.classList.toggle('about-section-active', isActive);
+  };
+
+  toggleAboutState();
+  window.addEventListener('scroll', toggleAboutState, { passive: true });
+  window.addEventListener('resize', toggleAboutState);
+}
+setupAboutSectionTransition();
 
 // FRONTEND CONCEPT: this file runs in the browser and connects page elements,
 // local browser storage, and server APIs to create interactive UI behavior.
