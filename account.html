@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My account | MISTIZEN</title>
+  <link rel="stylesheet" href="Frontend.css">
+</head>
+<body class="account-body">
+  <canvas id="webCanvas"></canvas>
+  <main class="account-shell">
+    <section class="account-card" aria-labelledby="accountTitle">
+      <p class="auth-brand">MISTIZEN</p>
+      <h1 id="accountTitle">My account</h1>
+      <p class="account-intro">Update the details displayed with your account.</p>
+
+      <form id="profileForm" class="account-form">
+        <div class="photo-editor">
+          <img id="profilePreview" class="profile-preview" alt="Your profile photo">
+          <label class="photo-upload" for="profilePhoto">Change photo<input id="profilePhoto" type="file" accept="image/png,image/jpeg,image/webp"></label>
+        </div>
+        <label for="profileEmail">Email address</label>
+        <input id="profileEmail" type="email" readonly>
+        <label for="profileUsername">Username</label>
+        <input id="profileUsername" type="text" minlength="2" maxlength="40" autocomplete="nickname" required>
+        <button class="auth-submit" type="submit">Save profile</button>
+      </form>
+
+      <section class="payment-preference" aria-labelledby="paymentTitle">
+        <h2 id="paymentTitle">Payment preference</h2>
+        <p id="savedPayment" class="saved-payment">No saved payment preference.</p>
+        <form id="paymentPreferenceForm" class="account-form">
+          <label for="paymentPreference">Payment method</label>
+          <select id="paymentPreference">
+            <option value="mpesa">M-Pesa</option>
+            <option value="card">Card</option>
+            <option value="paypal">PayPal</option>
+            <option value="sendwave">Sendwave</option>
+          </select>
+          <label id="paymentDetailLabel" for="paymentDetail">M-Pesa phone number</label>
+          <input id="paymentDetail" type="tel" inputmode="numeric" autocomplete="tel" placeholder="254 7XX XXX XXX">
+          <p class="payment-note">For your safety, card numbers and CVC codes are never saved.</p>
+          <button class="auth-submit" type="submit">Save payment preference</button>
+        </form>
+      </section>
+      <a id="adminDashboardLink" class="admin-dashboard-link" href="admin.html" hidden>Open admin dashboard</a>
+      <button id="logoutButton" class="logout-button" type="button">Log out</button>
+      <p id="accountMessage" class="auth-message" aria-live="polite"></p>
+    </section>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -416,6 +416,14 @@ document.body.insertAdjacentHTML('afterbegin', `
       </span>
       <span class="nav-label">Cart</span>
     </a>
+    <a href="support.html" aria-label="Customer support" title="Customer support">
+      <span class="nav-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 5.5h16v13H4z"></path><path d="m4 7 8 6 8-6"></path>
+        </svg>
+      </span>
+      <span class="nav-label">Support</span>
+    </a>
     <a href="auth.html" class="account-nav-link" aria-label="Account" title="Log in or sign up">
       <span class="nav-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -518,6 +526,59 @@ let selectedCurrency = localStorage.getItem('mistizenCurrency') || 'KES';
 const fallbackCurrencyRates = { KES: 1, USD: 0.0077, EUR: 0.0071, GBP: 0.0060 };
 let currencyRates = { ...fallbackCurrencyRates };
 
+function getApiBase() {
+  const isLocalLiveServer = ['5500', '5501', '5502', '5503', '3000'].includes(window.location.port);
+  const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+  return isLocalHost && isLocalLiveServer ? 'http://127.0.0.1:5000' : '';
+}
+
+const API_BASE = getApiBase();
+function apiUrl(path) {
+  return `${API_BASE}${path}`;
+}
+
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
+}
+
+function profileInitials(user) {
+  return (user.username || user.email || 'A').trim().slice(0, 1).toUpperCase();
+}
+
+function updateAccountNavigation(user) {
+  const accountLink = document.querySelector('.account-nav-link');
+  if (!accountLink) return;
+  if (!user) {
+    accountLink.href = 'auth.html';
+    accountLink.title = 'Log in or sign up';
+    accountLink.setAttribute('aria-label', 'Account');
+    accountLink.querySelector('.nav-label').textContent = 'Account';
+    return;
+  }
+  const displayName = user.username || user.email;
+  accountLink.href = 'account.html';
+  accountLink.title = `Account: ${displayName}`;
+  accountLink.setAttribute('aria-label', `Account: ${displayName}`);
+  accountLink.querySelector('.nav-label').textContent = displayName;
+  const icon = accountLink.querySelector('.nav-icon');
+  icon.classList.add('account-avatar');
+  icon.innerHTML = user.profile_photo
+    ? `<img src="${escapeHtml(user.profile_photo)}" alt="">`
+    : `<span>${escapeHtml(profileInitials(user))}</span>`;
+}
+
+async function loadAccountNavigation() {
+  try {
+    const response = await fetch(apiUrl('/api/auth/me'), { credentials: 'include' });
+    const data = await response.json();
+    updateAccountNavigation(data.authenticated ? data.user : null);
+  } catch {
+    updateAccountNavigation(null);
+  }
+}
+
+loadAccountNavigation();
+
 function currencyName(code) {
   try {
     return new Intl.DisplayNames([navigator.language], { type: 'currency' }).of(code) || code;
@@ -545,15 +606,30 @@ function formatCurrency(amountKes) {
   }
 }
 
+function getDeliveryFeeKes() {
+  const deliveryFeeNote = document.getElementById('deliveryFeeNote');
+  return Number(deliveryFeeNote?.dataset.fee || 0);
+}
+
 function updateDisplayedPrices() {
   document.querySelectorAll('.price-display').forEach(display => {
     display.textContent = formatCurrency(BASE_ITEM_PRICE_KES);
   });
+  document.querySelectorAll('.delivery-method[data-fee-kes]').forEach(method => {
+    const feeLabel = method.querySelector('small');
+    if (feeLabel) feeLabel.textContent = formatCurrency(Number(method.dataset.feeKes));
+  });
+  const deliveryFeeNote = document.getElementById('deliveryFeeNote');
+  if (deliveryFeeNote?.dataset.fee) {
+    deliveryFeeNote.textContent = `Delivery fee: ${formatCurrency(Number(deliveryFeeNote.dataset.fee))}`;
+  }
   renderCart();
   const checkoutTotal = document.getElementById('checkoutTotal');
   if (checkoutTotal) {
     const cart = JSON.parse(localStorage.getItem('mistizenCart') || '[]');
-    checkoutTotal.textContent = formatCurrency(cart.reduce((sum, item) => sum + priceInKes(item) * item.quantity, 0));
+    const subtotalKes = cart.reduce((sum, item) => sum + priceInKes(item) * item.quantity, 0);
+    const deliveryFeeKes = getDeliveryFeeKes();
+    checkoutTotal.textContent = formatCurrency(subtotalKes + deliveryFeeKes);
   }
 }
 
@@ -567,7 +643,7 @@ async function setupCurrencySwitcher() {
   selector.value = currencyRates[selectedCurrency] ? selectedCurrency : 'KES';
   updateDisplayedPrices();
   try {
-    const response = await fetch('/api/rates');
+    const response = await fetch(apiUrl('/api/rates'), { credentials: 'include' });
     const data = await response.json();
     if (data.result !== 'success' || !data.rates) throw new Error('Rates unavailable');
     currencyRates = data.rates;
@@ -602,6 +678,66 @@ function setupCheckout() {
   const total = cart.reduce((sum, item) => sum + priceInKes(item) * item.quantity, 0);
   totalElement.textContent = formatCurrency(total);
   let selectedMethod = 'mpesa';
+  let selectedDelivery = 'nairobi';
+  const deliveryAddressWrap = document.getElementById('deliveryAddressWrap');
+  const deliveryPhone = document.getElementById('deliveryPhone');
+  const deliveryCountryCode = document.getElementById('deliveryCountryCode');
+  const deliveryHouseNumber = document.getElementById('deliveryHouseNumber');
+  const deliveryAddress1 = document.getElementById('deliveryAddress1');
+  const deliveryAddress2 = document.getElementById('deliveryAddress2');
+  const deliveryZip = document.getElementById('deliveryZip');
+  const deliveryFeeNote = document.getElementById('deliveryFeeNote');
+  const deliveryFees = { nairobi: 50, nearby: 100, countrywide: 150, international: 400 };
+  // National-number rules for the country codes offered at checkout. Customers
+  // enter the number after the selected dialling code (a leading local 0 is OK).
+  const phoneRules = {
+    '+254': { name: 'Kenyan', pattern: /^(?:1|7)\d{8}$/, placeholder: '712 345 678' },
+    '+233': { name: 'Ghanaian', pattern: /^(?:2|5)\d{8}$/, placeholder: '24 123 4567' },
+    '+234': { name: 'Nigerian', pattern: /^[2-9]\d{9}$/, placeholder: '803 123 4567' },
+    '+256': { name: 'Ugandan', pattern: /^(?:2|3|4|7)\d{8}$/, placeholder: '712 345 678' },
+    '+255': { name: 'Tanzanian', pattern: /^(?:2|4|6|7|8)\d{8}$/, placeholder: '712 345 678' },
+    '+250': { name: 'Rwandan', pattern: /^(?:2|7|8)\d{8}$/, placeholder: '788 123 456' },
+    '+267': { name: 'Botswanan', pattern: /^[2-7]\d{6,7}$/, placeholder: '71 234 567' },
+    '+268': { name: 'Eswatini', pattern: /^(?:2|7)\d{7}$/, placeholder: '7612 3456' },
+    '+265': { name: 'Malawian', pattern: /^(?:1|2|8|9)\d{8}$/, placeholder: '991 234 567' },
+    '+260': { name: 'Zambian', pattern: /^(?:2|5|6|7|9)\d{8}$/, placeholder: '971 234 567' },
+    '+263': { name: 'Zimbabwean', pattern: /^[1-9]\d{8}$/, placeholder: '77 123 4567' },
+    '+27': { name: 'South African', pattern: /^[1-8]\d{8}$/, placeholder: '82 123 4567' },
+    '+1': { name: 'US or Canadian', pattern: /^[2-9]\d{2}[2-9]\d{6}$/, placeholder: '202 555 0123' },
+    '+44': { name: 'UK', pattern: /^\d{9,10}$/, placeholder: '7700 900123' },
+    '+91': { name: 'Indian', pattern: /^[6-9]\d{9}$/, placeholder: '98765 43210' },
+    '+61': { name: 'Australian', pattern: /^\d{9}$/, placeholder: '412 345 678' },
+    '+49': { name: 'German', pattern: /^\d{7,11}$/, placeholder: '151 23456789' },
+    '+33': { name: 'French', pattern: /^[1-9]\d{8}$/, placeholder: '6 12 34 56 78' },
+    '+81': { name: 'Japanese', pattern: /^\d{9,10}$/, placeholder: '90 1234 5678' },
+    '+971': { name: 'UAE', pattern: /^[2-9]\d{7,8}$/, placeholder: '50 123 4567' }
+  };
+  function normaliseNationalPhone(value) {
+    return value.replace(/[\s().-]/g, '').replace(/^0/, '');
+  }
+  function validateDeliveryPhone() {
+    const rule = phoneRules[deliveryCountryCode?.value];
+    const nationalNumber = normaliseNationalPhone(deliveryPhone?.value.trim() || '');
+    const valid = Boolean(rule && rule.pattern.test(nationalNumber));
+    if (deliveryPhone) {
+      deliveryPhone.setCustomValidity(valid || !deliveryPhone.value.trim()
+        ? ''
+        : `Enter a valid ${rule?.name || 'phone'} number for ${deliveryCountryCode.value}.`);
+    }
+    return { valid, nationalNumber, rule };
+  }
+  function updatePhoneHint() {
+    const rule = phoneRules[deliveryCountryCode?.value];
+    if (deliveryPhone && rule) deliveryPhone.placeholder = rule.placeholder;
+    validateDeliveryPhone();
+  }
+  function updateDeliveryFee() {
+    const fee = deliveryFees[selectedDelivery];
+    deliveryFeeNote.dataset.fee = String(fee);
+    const feeLabel = formatCurrency(fee);
+    deliveryFeeNote.textContent = `Delivery fee: ${feeLabel}`;
+    updateDisplayedPrices();
+  }
 
   const paymentFields = {
     mpesa: `<label for="paymentPhone">M-Pesa phone number</label><input id="paymentPhone" type="tel" inputmode="tel" placeholder="254 7XX XXX XXX" required><button class="pay-now" type="submit">Request M-Pesa prompt</button>`,
@@ -630,9 +766,33 @@ function setupCheckout() {
     document.querySelectorAll('.payment-method').forEach(item => item.classList.toggle('active', item === button));
     showPaymentMethod();
   }));
-  form.addEventListener('submit', event => {
+  document.querySelectorAll('.delivery-method').forEach(button => button.addEventListener('click', () => {
+    selectedDelivery = button.dataset.delivery;
+    document.querySelectorAll('.delivery-method').forEach(item => item.classList.toggle('active', item === button));
+    deliveryAddressWrap.hidden = false;
+    [deliveryPhone, deliveryHouseNumber, deliveryAddress1, deliveryZip].forEach(field => {
+      if (field) field.required = true;
+    });
+    updateDeliveryFee();
+  }));
+  deliveryCountryCode?.addEventListener('change', updatePhoneHint);
+  deliveryPhone?.addEventListener('input', validateDeliveryPhone);
+  form.addEventListener('submit', async event => {
     event.preventDefault();
     if (!cart.length) { message.textContent = 'Your cart is empty. Add an item before paying.'; return; }
+    const phoneValue = deliveryPhone?.value.trim() || '';
+    const countryCodeValue = deliveryCountryCode?.value || '';
+    const phoneCheck = validateDeliveryPhone();
+    const fullPhoneValue = `${countryCodeValue}${phoneCheck.nationalNumber}`;
+    const deliveryDetails = [
+      phoneValue,
+      deliveryHouseNumber?.value.trim(),
+      deliveryAddress1?.value.trim(),
+      deliveryAddress2?.value.trim(),
+      deliveryZip?.value.trim()
+    ].filter(Boolean);
+    if (!phoneCheck.valid) { message.textContent = `Please enter a valid ${phoneCheck.rule?.name || ''} phone number for the selected country code.`; deliveryPhone?.reportValidity(); return; }
+    if (deliveryDetails.length < 4) { message.textContent = 'Please complete your delivery details, including phone number, house number, address, and ZIP code.'; return; }
     if (selectedMethod === 'card') {
       const number = document.getElementById('cardNumber').value.replace(/\s/g, '');
       const expiry = document.getElementById('cardExpiry').value.match(/^(0[1-9]|1[0-2])\s*\/\s*(\d{2})$/);
@@ -649,9 +809,38 @@ function setupCheckout() {
       if (!/^\d{3,4}$/.test(cvc)) { message.textContent = 'Enter a valid 3- or 4-digit CVC.'; return; }
     }
     const labels = { mpesa: 'M-Pesa STK prompt', card: 'card payment', paypal: 'PayPal checkout', sendwave: 'Sendwave checkout' };
-    message.textContent = `${labels[selectedMethod]} is ready to connect. Add your payment-provider credentials and secure server integration to process live payments.`;
+    message.textContent = 'Processing your order securely...';
+    try {
+      const response = await fetch(apiUrl('/api/orders'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: cart,
+          total_kes: total,
+          payment_method: selectedMethod,
+          delivery_method: selectedDelivery,
+          delivery_address: {
+            phone: fullPhoneValue || '',
+            house_number: deliveryHouseNumber?.value.trim() || '',
+            address_1: deliveryAddress1?.value.trim() || '',
+            address_2: deliveryAddress2?.value.trim() || '',
+            zip_code: deliveryZip?.value.trim() || ''
+          }
+        }),
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (!response.ok || data.result !== 'success') throw new Error(data.message || 'Unable to place order.');
+      localStorage.removeItem('mistizenCart');
+      message.textContent = `${labels[selectedMethod]} accepted. Order #${data.order_id} was saved.${data.email_sent ? ' Your order details were emailed to you.' : ' Order email will be available once store email is configured.'}`;
+      setTimeout(() => { window.location.href = 'PRODUCTS.html'; }, 700);
+    } catch (error) {
+      message.textContent = error.message || 'Unable to place order.';
+    }
   });
   showPaymentMethod();
+  updatePhoneHint();
+  updateDeliveryFee();
 }
 setupCheckout();
 
@@ -662,6 +851,23 @@ if (authForm) {
   const subtitle = document.getElementById('authSubtitle');
   const submit = authForm.querySelector('.auth-submit');
   const message = document.getElementById('authMessage');
+  const params = new URLSearchParams(window.location.search);
+  const authError = params.get('auth_error');
+  if (authError) {
+    const friendlyMessages = {
+      google_not_configured: 'Google sign-in is not configured yet. Please use the email form for now.',
+      invalid_state: 'The Google sign-in request was interrupted. Please try again.',
+      missing_code: 'Google did not return a valid sign-in code. Please try again.',
+      token_exchange_failed: 'Google sign-in could not be completed. Please try again.',
+      userinfo_failed: 'Google did not return your profile details. Please try again.',
+      email_missing: 'Google did not return a usable email address.',
+      access_denied: 'Google sign-in was cancelled.'
+    };
+    message.textContent = friendlyMessages[authError] || 'Google sign-in could not be completed.';
+  }
+  if (params.get('auth') === 'demo') {
+    message.textContent = 'Google sign-in was not fully available, so you were signed in with a demo account.';
+  }
   document.querySelectorAll('.auth-tab').forEach(tab => tab.addEventListener('click', () => {
     authMode = tab.dataset.mode;
     document.querySelectorAll('.auth-tab').forEach(item => item.classList.toggle('active', item === tab));
@@ -670,19 +876,200 @@ if (authForm) {
     submit.textContent = authMode === 'signup' ? 'Sign up with email' : 'Log in with email';
     message.textContent = '';
   }));
-  authForm.addEventListener('submit', event => {
+  authForm.addEventListener('submit', async event => {
     event.preventDefault();
-    const email = document.getElementById('authEmail').value;
-    localStorage.setItem('mistizenUser', JSON.stringify({ email, method: 'email' }));
-    message.textContent = `${authMode === 'signup' ? 'Account created' : 'Logged in'} for ${email}.`;
+    const email = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPassword').value;
+    const endpoint = authMode === 'signup' ? '/api/auth/register' : '/api/auth/login';
+    message.textContent = 'Please wait...';
+    try {
+      const response = await fetch(apiUrl(endpoint), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (!response.ok || data.result !== 'success') throw new Error(data.message || 'Authentication failed.');
+      localStorage.setItem('mistizenUser', JSON.stringify(data.user || { email, method: 'email' }));
+      message.textContent = `${authMode === 'signup' ? 'Account created' : 'Logged in'} for ${email}.`;
+      setTimeout(() => { window.location.href = 'PRODUCTS.html'; }, 600);
+    } catch (error) {
+      message.textContent = error.message || 'Authentication failed.';
+    }
   });
   document.querySelectorAll('[data-provider]').forEach(button => button.addEventListener('click', () => {
     const provider = button.dataset.provider;
     if (provider === 'Google') {
-      window.location.href = '/api/auth/google';
+      window.location.href = apiUrl('/api/auth/google');
       return;
     }
     localStorage.setItem('mistizenUser', JSON.stringify({ method: provider }));
     message.textContent = `${provider} sign-in is ready to connect. Add provider credentials to enable the real secure sign-in.`;
   }));
 }
+
+function setupAccountPage() {
+  const profileForm = document.getElementById('profileForm');
+  if (!profileForm) return;
+  const message = document.getElementById('accountMessage');
+  const email = document.getElementById('profileEmail');
+  const username = document.getElementById('profileUsername');
+  const preview = document.getElementById('profilePreview');
+  const photoInput = document.getElementById('profilePhoto');
+  const paymentForm = document.getElementById('paymentPreferenceForm');
+  const paymentMethod = document.getElementById('paymentPreference');
+  const paymentDetail = document.getElementById('paymentDetail');
+  const paymentLabel = document.getElementById('paymentDetailLabel');
+  const savedPayment = document.getElementById('savedPayment');
+  let photoData = '';
+
+  function showPhoto(user) {
+    photoData = user.profile_photo || '';
+    preview.src = photoData || '';
+    preview.hidden = !photoData;
+    preview.alt = photoData ? 'Your profile photo' : '';
+  }
+  function renderUser(user) {
+    email.value = user.email;
+    username.value = user.username || user.email.split('@')[0];
+    showPhoto(user);
+    savedPayment.textContent = user.payment_label || 'No saved payment preference.';
+    if (user.payment_method) paymentMethod.value = user.payment_method;
+    document.getElementById('adminDashboardLink').hidden = !user.is_admin;
+    updatePaymentInput();
+    updateAccountNavigation(user);
+  }
+  function updatePaymentInput() {
+    const isCard = paymentMethod.value === 'card';
+    const needsDetail = isCard || paymentMethod.value === 'mpesa';
+    paymentLabel.textContent = isCard ? 'Card number (only the last four digits are retained)' : 'M-Pesa phone number';
+    paymentDetail.placeholder = isCard ? '1234 5678 9012 3456' : '254 7XX XXX XXX';
+    paymentDetail.required = needsDetail;
+    paymentLabel.toggleAttribute('hidden', !needsDetail);
+    paymentDetail.hidden = !needsDetail;
+  }
+  async function getAccount() {
+    const response = await fetch(apiUrl('/api/auth/me'), { credentials: 'include' });
+    const data = await response.json();
+    if (!data.authenticated) { window.location.replace('auth.html'); return; }
+    renderUser(data.user);
+  }
+  photoInput.addEventListener('change', () => {
+    const file = photoInput.files[0];
+    if (!file) return;
+    if (file.size > 1024 * 1024) { message.textContent = 'Choose an image smaller than 1 MB.'; photoInput.value = ''; return; }
+    const reader = new FileReader();
+    reader.onload = () => { photoData = String(reader.result); preview.src = photoData; preview.hidden = false; };
+    reader.readAsDataURL(file);
+  });
+  profileForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    message.textContent = 'Saving profile...';
+    try {
+      const response = await fetch(apiUrl('/api/account/profile'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ username: username.value, profile_photo: photoData }) });
+      const data = await response.json();
+      if (!response.ok || data.result !== 'success') throw new Error(data.message);
+      renderUser(data.user); message.textContent = 'Profile saved.';
+    } catch (error) { message.textContent = error.message || 'Could not save your profile.'; }
+  });
+  paymentMethod.addEventListener('change', updatePaymentInput);
+  paymentForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    message.textContent = 'Saving payment preference...';
+    try {
+      const response = await fetch(apiUrl('/api/account/payment'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ method: paymentMethod.value, detail: paymentDetail.value }) });
+      const data = await response.json();
+      if (!response.ok || data.result !== 'success') throw new Error(data.message);
+      renderUser(data.user); paymentDetail.value = ''; message.textContent = 'Payment preference saved.';
+    } catch (error) { message.textContent = error.message || 'Could not save payment preference.'; }
+  });
+  document.getElementById('logoutButton').addEventListener('click', async () => {
+    await fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' });
+    localStorage.removeItem('mistizenUser');
+    window.location.replace('Frontend.html');
+  });
+  getAccount().catch(() => { message.textContent = 'Could not load your account.'; });
+}
+
+setupAccountPage();
+
+function setupSupportPage() {
+  const form = document.getElementById('supportForm');
+  if (!form) return;
+  const message = document.getElementById('supportMessage');
+  const submit = form.querySelector('button[type="submit"]');
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    submit.disabled = true;
+    message.textContent = 'Sending your feedback...';
+    try {
+      const response = await fetch(apiUrl('/api/support'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.get('name'),
+          email: formData.get('email'),
+          feedback: formData.get('feedback')
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || data.result !== 'success') throw new Error(data.message || 'Could not send feedback.');
+      form.reset();
+      message.textContent = data.message;
+    } catch (error) {
+      message.textContent = error.message || 'Could not send feedback.';
+    } finally {
+      submit.disabled = false;
+    }
+  });
+}
+
+setupSupportPage();
+
+function setupAdminDashboard() {
+  const container = document.getElementById('adminOrders');
+  if (!container) return;
+  const message = document.getElementById('adminMessage');
+  const statusOptions = ['new', 'processing', 'out_for_delivery', 'delivered', 'cancelled'];
+  function readable(value) { return String(value || '').replaceAll('_', ' '); }
+  function render(orders) {
+    if (!orders.length) { container.innerHTML = '<p class="empty-cart">No orders yet.</p>'; return; }
+    container.innerHTML = orders.map(order => {
+      let items = [];
+      try { items = JSON.parse(order.payload); } catch { items = []; }
+      const itemSummary = items.map(item => `${escapeHtml(item.name)} × ${Number(item.quantity || 1)}`).join(', ') || 'Order items unavailable';
+      return `<article class="admin-order">
+        <div class="admin-order-heading"><strong>Order #${order.id}</strong><span class="order-status">${escapeHtml(readable(order.status))}</span></div>
+        <p><b>${escapeHtml(order.username || order.email)}</b><br>${escapeHtml(order.email)}</p>
+        <p>${itemSummary}</p>
+        <p><b>KSh ${Number(order.total_kes).toLocaleString()}</b> · ${escapeHtml(order.payment_method)}</p>
+        <p><b>${escapeHtml(readable(order.delivery_method))} · KSh ${Number(order.delivery_fee_kes || 0).toLocaleString()}</b>${order.delivery_address ? `<br>${escapeHtml(order.delivery_address)}` : ''}</p>
+        <label>Order status <select class="order-status-select" data-order-id="${order.id}">${statusOptions.map(status => `<option value="${status}" ${status === order.status ? 'selected' : ''}>${readable(status)}</option>`).join('')}</select></label>
+      </article>`;
+    }).join('');
+    container.querySelectorAll('.order-status-select').forEach(select => select.addEventListener('change', async () => {
+      message.textContent = 'Updating order...';
+      try {
+        const response = await fetch(apiUrl(`/api/admin/orders/${select.dataset.orderId}/status`), { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ status: select.value }) });
+        const data = await response.json();
+        if (!response.ok || data.result !== 'success') throw new Error(data.message);
+        message.textContent = 'Order status updated.';
+        loadOrders();
+      } catch (error) { message.textContent = error.message || 'Could not update the order.'; }
+    }));
+  }
+  async function loadOrders() {
+    try {
+      const response = await fetch(apiUrl('/api/admin/orders'), { credentials: 'include' });
+      const data = await response.json();
+      if (response.status === 403) { window.location.replace('account.html'); return; }
+      if (!response.ok || data.result !== 'success') throw new Error(data.message);
+      render(data.orders);
+    } catch (error) { message.textContent = error.message || 'Could not load orders.'; }
+  }
+  loadOrders();
+}
+
+setupAdminDashboard();

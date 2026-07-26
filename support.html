@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customer Support | MISTIZEN</title>
+  <link rel="stylesheet" href="Frontend.css">
+</head>
+<body>
+  <canvas id="webCanvas"></canvas>
+  <main class="support-page">
+    <a class="support-back" href="Frontend.html">← Back to home</a>
+    <section class="support-card" aria-labelledby="supportTitle">
+      <h1 id="supportTitle">Customer Support</h1>
+      <p>Need help with an order or have a question? Email us directly, or send your feedback below.</p>
+      <a class="support-email-link" href="https://mail.google.com/mail/?view=cm&amp;fs=1&amp;to=kchoppa182%40gmail.com" target="_blank" rel="noopener">Email MISTIZEN through Gmail</a>
+      <form id="supportForm" class="support-form">
+        <label for="supportName">Your name</label>
+        <input id="supportName" name="name" type="text" autocomplete="name" minlength="2" maxlength="80" required>
+        <label for="supportEmail">Your email</label>
+        <input id="supportEmail" name="email" type="email" autocomplete="email" required>
+        <label for="supportFeedback">Feedback or message</label>
+        <textarea id="supportFeedback" name="feedback" minlength="10" maxlength="3000" required></textarea>
+        <button class="support-submit" type="submit">Send feedback</button>
+      </form>
+      <p id="supportMessage" class="support-message" aria-live="polite"></p>
+    </section>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>
