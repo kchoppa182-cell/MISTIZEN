@@ -11,12 +11,38 @@
   <main class="admin-shell">
     <section class="admin-card">
       <p class="auth-brand">MISTIZEN ADMIN</p>
-      <h1>Orders & delivery</h1>
+      <h1>Dashboard</h1>
+      <p class="account-intro">Store performance at a glance, then manage orders below.</p>
+
+      <!-- KPI stats -->
+      <div id="adminStats" class="admin-stats">
+        <div class="admin-stat"><span class="stat-label">Today's sales</span><strong class="stat-value" id="statTodaySales">—</strong></div>
+        <div class="admin-stat"><span class="stat-label">This week's revenue</span><strong class="stat-value" id="statWeekRevenue">—</strong></div>
+        <div class="admin-stat"><span class="stat-label">Monthly revenue</span><strong class="stat-value" id="statMonthRevenue">—</strong></div>
+        <div class="admin-stat"><span class="stat-label">Total orders</span><strong class="stat-value" id="statTotalOrders">—</strong></div>
+        <div class="admin-stat"><span class="stat-label">Average order value</span><strong class="stat-value" id="statAvgOrder">—</strong></div>
+        <div class="admin-stat"><span class="stat-label">New customers</span><strong class="stat-value" id="statNewCustomers">—</strong></div>
+      </div>
+
+      <!-- Product insights -->
+      <div id="adminProducts" class="admin-products">
+        <section class="admin-panel" aria-labelledby="bestSellersTitle">
+          <h2 id="bestSellersTitle">Best-selling products</h2>
+          <div id="bestSellers" class="admin-product-list"></div>
+        </section>
+        <section class="admin-panel" aria-labelledby="lowStockTitle">
+          <h2 id="lowStockTitle">Low-stock products</h2>
+          <div id="lowStock" class="admin-product-list"></div>
+        </section>
+      </div>
+
+      <h1 class="admin-section-title">Orders & delivery</h1>
       <p class="account-intro">Review incoming orders and update delivery progress.</p>
       <p id="adminMessage" class="auth-message" aria-live="polite"></p>
       <div id="adminOrders" class="admin-orders"></div>
     </section>
   </main>
+  <script src="products.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

@@ -1,2 +1,9 @@
 Flask>=3.0,<4.0
 gunicorn>=22,<24
+# PostgreSQL support for production (uses DATABASE_URL). SQLite remains the
+# local default and needs no extra driver.
+psycopg2-binary>=2.9,<3.0
+# Africa's Talking SMS for SMS notifications (optional).
+africastalking>=1.1
+# Twilio for WhatsApp Business API (optional) — large, lazy-install.
+# twilio>=8.0

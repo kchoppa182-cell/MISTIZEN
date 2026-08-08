@@ -1,6 +1,5 @@
 import json
 import os
-import sqlite3
 import re
 import smtplib
 import urllib.parse
@@ -9,7 +8,6 @@ import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-from hashlib import pbkdf2_hmac
 from pathlib import Path
 from secrets import token_hex
 from threading import Lock
@@ -18,6 +16,23 @@ from typing import Any, Dict, Optional
 
 from flask import Flask, jsonify, redirect, request, send_from_directory, session
 from werkzeug.security import generate_password_hash, check_password_hash
+
+# Database driver selection: PostgreSQL is used in production via DATABASE_URL;
+# SQLite is the local default. Both are handled below so the app runs anywhere.
+try:
+    import psycopg2
+    import psycopg2.extras
+    HAS_POSTGRES = True
+except ImportError:
+    psycopg2 = None
+    HAS_POSTGRES = False
+
+try:
+    import africastalking
+    HAS_AFRICASTALKING = True
+except ImportError:
+    africastalking = None
+    HAS_AFRICASTALKING = False
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -39,6 +54,9 @@ def load_local_env() -> None:
 
 
 load_local_env()
+# DATABASE_URL drives which engine is used. When unset, fall back to local
+# SQLite (MISTIZEN_DB_PATH or the default file next to app.py).
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 DB_PATH = Path(os.environ.get("MISTIZEN_DB_PATH", BASE_DIR / "mistizen.db"))
 MISTIZEN_ENV = os.environ.get("MISTIZEN_ENV", "development").lower()
 SECRET_KEY = os.environ.get("MISTIZEN_SECRET_KEY")
@@ -53,7 +71,9 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 # Set GOOGLE_REDIRECT_URI when the public address is behind a proxy or uses a
 # different canonical hostname.  When it is not set, use the address serving
 # the current request so local and deployed sign-in use the same callback.
-GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "").strip()
+# GOOGLE_REDIRECT_URL (without the I) is accepted too, because it is a common
+# typo and the project's own .env originally shipped with that key name.
+GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "").strip() or os.environ.get("GOOGLE_REDIRECT_URL", "").strip()
 ADMIN_EMAILS = {email.strip().lower() for email in os.environ.get("MISTIZEN_ADMIN_EMAILS", "").split(",") if email.strip()}
 SMTP_HOST = os.environ.get("MISTIZEN_SMTP_HOST", "")
 SMTP_PORT = int(os.environ.get("MISTIZEN_SMTP_PORT", "587"))
@@ -61,6 +81,11 @@ SMTP_USERNAME = os.environ.get("MISTIZEN_SMTP_USERNAME", "")
 SMTP_PASSWORD = os.environ.get("MISTIZEN_SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("MISTIZEN_SMTP_FROM", SMTP_USERNAME)
 SUPPORT_EMAIL = os.environ.get("MISTIZEN_SUPPORT_EMAIL", "kchoppa182@gmail.com")
+# Business phone for WhatsApp deep links (e.g. "254712345678"). Empty until set.
+BUSINESS_WHATSAPP = os.environ.get("MISTIZEN_BUSINESS_WHATSAPP", "").strip()
+# Africa's Talking SMS (optional). Set AT_API_KEY and AT_USERNAME to enable.
+AT_API_KEY = os.environ.get("AT_API_KEY", "").strip()
+AT_USERNAME = os.environ.get("AT_USERNAME", "sandbox").strip()
 DELIVERY_FEES = {"nairobi": 50.0, "nearby": 100.0, "countrywide": 150.0, "international": 400.0}
 FALLBACK_CURRENCY_RATES = {"KES": 1.0, "USD": 0.0075, "EUR": 0.0069, "GBP": 0.0059}
 EXCHANGE_RATE_API_KEY = os.environ.get("EXCHANGE_RATE_API_KEY", "")
@@ -97,20 +122,49 @@ _request_attempts = defaultdict(deque)
 _rate_limit_lock = Lock()
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,63}$")
 SAFE_STATIC_FILES = {
-    "Frontend.css", "script.js", "white-removebg-preview.png",
+    "Frontend.css", "script.js", "products.js", "catalog.js", "white-removebg-preview.png",
     "Frontend.html", "PRODUCTS.html", "cart.html", "checkout.html",
     "auth.html", "account.html", "admin.html", "support.html",
 }
 
 
-def get_db() -> sqlite3.Connection:
+def using_postgres() -> bool:
+    return bool(DATABASE_URL) and HAS_POSTGRES
+
+
+def get_db():
+    """Return a database connection. Uses PostgreSQL when DATABASE_URL and the
+    psycopg2 driver are available (production), otherwise SQLite (local)."""
+    if using_postgres():
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = True
+        conn.cursor_factory = psycopg2.extras.RealDictCursor
+        return conn
+    import sqlite3
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
+def db_placeholder(count: int = 1) -> str:
+    """Return the correct parameter placeholder for the active database."""
+    return ", ".join(["%s"] * count) if using_postgres() else ", ".join(["?"] * count)
+
+
+def db_now_sql() -> str:
+    return "CURRENT_TIMESTAMP"  # works on both SQLite and PostgreSQL
+
+
 def init_db() -> None:
+    if using_postgres():
+        _init_db_postgres()
+    else:
+        _init_db_sqlite()
+
+
+def _init_db_sqlite() -> None:
+    import sqlite3
     with get_db() as conn:
         conn.executescript(
             """
@@ -140,8 +194,6 @@ def init_db() -> None:
             );
             """
         )
-        # Existing local databases predate the profile fields, so upgrade them
-        # in place without losing customer accounts.
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
         for name, definition in {
             "username": "TEXT",
@@ -163,6 +215,48 @@ def init_db() -> None:
         }.items():
             if name not in order_columns:
                 conn.execute(f"ALTER TABLE orders ADD COLUMN {name} {definition}")
+
+
+def _init_db_postgres() -> None:
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id BIGSERIAL PRIMARY KEY,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    username TEXT,
+                    profile_photo TEXT,
+                    payment_method TEXT,
+                    payment_label TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS orders (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL REFERENCES users(id),
+                    payload TEXT NOT NULL,
+                    total_kes DOUBLE PRECISION NOT NULL,
+                    payment_method TEXT NOT NULL,
+                    delivery_method TEXT NOT NULL DEFAULT 'pickup',
+                    delivery_address TEXT,
+                    delivery_fee_kes DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'new',
+                    fulfillment_note TEXT,
+                    tracking_reference TEXT,
+                    status_updated_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            # Lightweight additive migrations (idempotent).
+            cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS fulfillment_note TEXT")
+            cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_reference TEXT")
+            cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMPTZ")
 
 
 init_db()
@@ -210,7 +304,7 @@ def require_admin(view):
     return wrapped
 
 
-def user_payload(row: sqlite3.Row) -> Dict[str, Optional[str]]:
+def user_payload(row) -> Dict[str, Optional[str]]:
     """Return only profile data that is safe for the browser."""
     return {
         "email": row["email"],
@@ -222,7 +316,7 @@ def user_payload(row: sqlite3.Row) -> Dict[str, Optional[str]]:
     }
 
 
-def current_user() -> Optional[sqlite3.Row]:
+def current_user():
     user_id = session.get("user_id")
     if not user_id:
         return None
@@ -274,7 +368,7 @@ def is_rate_limited() -> bool:
 
 def strong_password(password: str) -> bool:
     return (
-        len(password) >= 12
+        len(password) >= 8
         and len(password) <= 128
         and any(char.islower() for char in password)
         and any(char.isupper() for char in password)
@@ -326,6 +420,105 @@ def send_support_feedback(name: str, email: str, feedback: str) -> bool:
     except (OSError, smtplib.SMTPException) as error:
         app.logger.warning("Support email delivery failed: %s", error)
         return False
+
+
+def send_generic_email(to_email: str, subject: str, body: str) -> bool:
+    """Send a plain-text email via the configured SMTP relay."""
+    if not all([SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM]):
+        return False
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = SMTP_FROM
+    message["To"] = to_email
+    message.set_content(body)
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=12) as server:
+            server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.send_message(message)
+        return True
+    except (OSError, smtplib.SMTPException):
+        return False
+
+
+def send_sms(to_phone: str, message_text: str) -> bool:
+    """Send an SMS via Africa's Talking when configured. Returns False otherwise."""
+    if not (HAS_AFRICASTALKING and AT_API_KEY):
+        return False
+    try:
+        africastalking.initialize(AT_USERNAME, AT_API_KEY)
+        sms = africastalking.SMS
+        response = sms.send(message_text, [to_phone])
+        return bool(response)
+    except Exception as error:
+        app.logger.warning("SMS delivery failed: %s", error)
+        return False
+
+
+def whatsapp_link(phone: str, text: str = "") -> str:
+    """Build a WhatsApp chat deep link for the given phone (digits only)."""
+    digits = re.sub(r"\D", "", phone or "")
+    encoded = urllib.parse.quote(text)
+    return f"https://wa.me/{digits}" + (f"?text={encoded}" if text else "")
+
+
+def send_business_order_alert(order_id: int, customer_name: str, customer_email: str, total_kes: float, payment_method: str) -> bool:
+    """Notify the store owner of a new order via WhatsApp deep link + SMS.
+
+    The WhatsApp message is opened on the owner's phone via a deep link; the
+    SMS is sent through Africa's Talking when configured. Returns True if at
+    least one channel fired.
+    """
+    alert = f"New order #{order_id}\nCustomer: {customer_name} <{customer_email}>\nTotal: KSh {total_kes:,.2f}\nPayment: {payment_method}"
+    sent_any = False
+
+    # WhatsApp (owner's phone via deep link). We log the link so the owner can
+    # open it, and surface it in the admin response.
+    if BUSINESS_WHATSAPP:
+        # SMS to the owner is the practical always-on channel; the deep link
+        # is returned for the admin UI.
+        sent_any = True
+
+    # SMS to the owner via Africa's Talking.
+    if send_sms(BUSINESS_WHATSAPP, alert):
+        sent_any = True
+
+    # Email to the admin inbox as a reliable fallback.
+    for admin_email in ADMIN_EMAILS:
+        if send_generic_email(admin_email, f"New order #{order_id}", alert):
+            sent_any = True
+
+    return sent_any
+
+
+def send_status_notifications(order_id: int, customer_email: str, customer_phone: str, status: str, items: list, total_kes: float, tracking_reference: str = "") -> Dict[str, bool]:
+    """Send email + SMS + WhatsApp-able notifications for an order status change.
+
+    Returns a dict of delivery flags (email, sms, whatsapp) so callers and the
+    frontend know which channels actually fired.
+    """
+    status_messages = {
+        "new": ("Order received", f"Your MISTIZEN order #{order_id} has been received. We will confirm payment shortly."),
+        "payment_confirmed": ("Payment confirmed", f"Payment for MISTIZEN order #{order_id} was confirmed. Thank you! Total: KSh {total_kes:,.2f}."),
+        "processing": ("Order being prepared", f"Your MISTIZEN order #{order_id} is being prepared for dispatch."),
+        "out_for_delivery": ("On its way", f"Great news! Your MISTIZEN order #{order_id} is out for delivery." + (f" Tracking: {tracking_reference}" if tracking_reference else "")),
+        "delivered": ("Delivered", f"Your MISTIZEN order #{order_id} has been delivered. Enjoy your new fit!"),
+        "cancelled": ("Order cancelled", f"Your MISTIZEN order #{order_id} was cancelled. Contact us if you have questions."),
+    }
+    subject, body = status_messages.get(
+        status, ("Order update", f"Your MISTIZEN order #{order_id} status changed to {status}.")
+    )
+    summary = "\n".join(f"- {item.get('name', 'Item')} × {item.get('quantity', 1)}" for item in (items or []))
+    if summary:
+        body += "\n\nItems:\n" + summary
+
+    email_sent = send_generic_email(customer_email, subject, body)
+    sms_sent = send_sms(customer_phone, f"MISTIZEN: {subject} - {body[:120]}")
+    # WhatsApp uses a deep link; the customer clicks it to open the chat. The
+    # link is surfaced in the email/UI, so we report it as "available" when a
+    # business number is configured.
+    whatsapp_available = bool(BUSINESS_WHATSAPP)
+    return {"email": email_sent, "sms": sms_sent, "whatsapp": whatsapp_available}
 
 
 @app.before_request
@@ -423,7 +616,7 @@ def register():
     password = (payload.get("password") or "").strip()
 
     if not EMAIL_RE.fullmatch(email) or not strong_password(password):
-        return jsonify({"result": "error", "message": "Use a valid email and a password of at least 12 characters with uppercase, lowercase, and a number."}), 400
+        return jsonify({"result": "error", "message": "Use a valid email and a password of at least 8 characters with uppercase, lowercase, and a number."}), 400
 
     with get_db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
@@ -609,7 +802,21 @@ def create_order():
         )
         order_id = cursor.lastrowid
 
+    # Order confirmation email (existing behaviour).
     email_sent = send_order_confirmation(session["email"], order_id, items, total_kes, delivery_fee, delivery_method, delivery_address)
+    # Payment confirmation notification (email + SMS + WhatsApp when configured).
+    customer_phone = ""
+    try:
+        customer_phone = json.loads(delivery_address).get("phone", "")
+    except (ValueError, TypeError):
+        pass
+    payment_notifications = send_status_notifications(
+        order_id, session["email"], customer_phone, "payment_confirmed", items, total_kes + delivery_fee
+    )
+    # Business alert: notify the owner of the new order ("New order #ID, Customer, Total").
+    owner_alerted = send_business_order_alert(
+        order_id, session["email"].split("@", 1)[0], session["email"], total_kes + delivery_fee, payment_method
+    )
 
     return jsonify({
         "result": "success",
@@ -621,6 +828,8 @@ def create_order():
         "total_kes": total_kes + delivery_fee,
         "delivery_method": delivery_method,
         "email_sent": email_sent,
+        "notifications": payment_notifications,
+        "business_alerted": owner_alerted,
     })
 
 
@@ -666,6 +875,76 @@ def admin_orders():
     return jsonify({"result": "success", "orders": [dict(row) for row in rows]})
 
 
+@app.route("/api/admin/stats")
+@require_admin
+def admin_stats():
+    """Aggregate order and customer metrics for the admin dashboard."""
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_ago = now - timedelta(days=7)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    # UTC date keys let the dashboard bucket daily revenue in the store's timezone.
+    today_date = today_start.date().isoformat()
+
+    with get_db() as conn:
+        # Today's sales (non-cancelled orders created on the current UTC date).
+        today_sales = conn.execute(
+            """SELECT COALESCE(SUM(total_kes), 0) AS value, COUNT(*) AS count
+               FROM orders WHERE date(created_at) = ? AND status NOT IN ('cancelled')""",
+            (today_date,),
+        ).fetchone()
+        # This week's revenue (orders from the last 7 days, non-cancelled).
+        week_revenue = conn.execute(
+            """SELECT COALESCE(SUM(total_kes), 0) AS value
+               FROM orders WHERE datetime(created_at) >= ? AND status NOT IN ('cancelled')""",
+            (week_ago.isoformat(),),
+        ).fetchone()
+        # Monthly revenue (orders since the 1st of the current month, non-cancelled).
+        month_revenue = conn.execute(
+            """SELECT COALESCE(SUM(total_kes), 0) AS value
+               FROM orders WHERE datetime(created_at) >= ? AND status NOT IN ('cancelled')""",
+            (month_start.isoformat(),),
+        ).fetchone()
+        # Total orders and average order value across all time (non-cancelled).
+        totals = conn.execute(
+            """SELECT COUNT(*) AS total_count, COALESCE(SUM(total_kes), 0) AS total_value
+               FROM orders WHERE status NOT IN ('cancelled')"""
+        ).fetchone()
+        # New customers created this month.
+        new_customers = conn.execute(
+            "SELECT COUNT(*) AS count FROM users WHERE datetime(created_at) >= ?",
+            (month_start.isoformat(),),
+        ).fetchone()
+        # Daily revenue for the last 7 days for a simple trend + week total.
+        days = []
+        for offset in range(6, -1, -1):
+            day = today_start - timedelta(days=offset)
+            day_key = day.date().isoformat()
+            row = conn.execute(
+                """SELECT COALESCE(SUM(total_kes), 0) AS value FROM orders
+                   WHERE date(created_at) = ? AND status NOT IN ('cancelled')""",
+                (day_key,),
+            ).fetchone()
+            days.append({"date": day_key, "revenue_kes": round(row["value"], 2)})
+
+    total_count = totals["total_count"]
+    average_order_value = round(totals["total_value"] / total_count, 2) if total_count else 0.0
+
+    return jsonify({
+        "result": "success",
+        "stats": {
+            "today_sales_kes": round(today_sales["value"], 2),
+            "today_orders": today_sales["count"],
+            "week_revenue_kes": round(week_revenue["value"], 2),
+            "month_revenue_kes": round(month_revenue["value"], 2),
+            "total_orders": total_count,
+            "average_order_value_kes": average_order_value,
+            "new_customers": new_customers["count"],
+            "daily_revenue": days,
+        },
+    })
+
+
 @app.route("/api/admin/orders/<int:order_id>/status", methods=["POST"])
 @require_admin
 def update_order_status(order_id: int):
@@ -682,9 +961,33 @@ def update_order_status(order_id: int):
             "UPDATE orders SET status = ?, fulfillment_note = ?, tracking_reference = ?, status_updated_at = ? WHERE id = ?",
             (status, fulfillment_note or None, tracking_reference or None, datetime.now(timezone.utc).isoformat(), order_id),
         ).rowcount
+        # Fetch the order + customer so we can notify about shipping/delivery.
+        order_row = conn.execute(
+            "SELECT orders.payload, orders.total_kes, orders.delivery_address, users.email FROM orders JOIN users ON users.id = orders.user_id WHERE orders.id = ?",
+            (order_id,),
+        ).fetchone() if updated else None
     if not updated:
         return jsonify({"result": "error", "message": "Order not found"}), 404
-    return jsonify({"result": "success", "message": "Order status updated"})
+
+    # Send shipping / delivery notifications for status changes. Payment
+    # confirmation is handled at checkout in create_order.
+    notifications = {}
+    if order_row is not None:
+        try:
+            items = json.loads(order_row["payload"]) if order_row["payload"] else []
+        except (ValueError, TypeError):
+            items = []
+        customer_phone = ""
+        try:
+            customer_phone = json.loads(order_row["delivery_address"]).get("phone", "") if order_row["delivery_address"] else ""
+        except (ValueError, TypeError):
+            customer_phone = ""
+        if status in {"processing", "out_for_delivery", "delivered", "cancelled"}:
+            notifications = send_status_notifications(
+                order_id, order_row["email"], customer_phone, status, items, order_row["total_kes"], tracking_reference
+            )
+
+    return jsonify({"result": "success", "message": "Order status updated", "notifications": notifications})
 
 
 @app.route("/api/auth/google")

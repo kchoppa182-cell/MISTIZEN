@@ -309,7 +309,11 @@ window.addEventListener('keydown', event => { if (event.key === 'Escape') closeI
 
 // FRONTEND CONCEPT: each product card owns its own image gallery, quantity
 // state, and Add to cart event handlers.
+// The catalogue page renders its cards dynamically via catalog.js (which has
+// its own gallery, wishlist, and quick-view wiring), so skip it here.
+const isCatalogPage = typeof window.MISTIZEN_PRODUCTS !== 'undefined' && document.getElementById('productGrid');
 document.querySelectorAll('.card').forEach(card => {
+  if (isCatalogPage) return;
   const frame = card.querySelector('.frame');
   const preview = card.querySelector('.preview');
 
@@ -511,12 +515,16 @@ function renderCart() {
     cartTotal.textContent = '';
     return;
   }
-  cartItems.innerHTML = cart.map((item, index) => `
+  cartItems.innerHTML = cart.map((item, index) => {
+    const variants = [item.size, item.color].filter(Boolean).join(' · ');
+    const variantLine = variants ? `<small>${escapeHtml(variants)}</small>` : '';
+    return `
     <article class="cart-item">
-      <div><strong>${item.name}</strong><small>Quantity: ${item.quantity}</small></div>
+      <div><strong>${escapeHtml(item.name)}</strong>${variantLine}<small>Quantity: ${item.quantity}</small></div>
       <span>${formatCurrency(priceInKes(item) * item.quantity)}</span>
       <button class="remove-item" data-index="${index}">Remove</button>
-    </article>`).join('');
+    </article>`;
+  }).join('');
   const total = cart.reduce((sum, item) => sum + priceInKes(item) * item.quantity, 0);
   cartTotal.textContent = `Total: ${formatCurrency(total)}`;
   cartItems.querySelectorAll('.remove-item').forEach(button => button.addEventListener('click', () => {
@@ -539,6 +547,9 @@ if (clearCartButton) {
 let selectedCurrency = localStorage.getItem('mistizenCurrency') || 'KES';
 const fallbackCurrencyRates = { KES: 1, USD: 0.0077, EUR: 0.0071, GBP: 0.0060 };
 let currencyRates = { ...fallbackCurrencyRates };
+// Share the live rates with catalog.js so its dynamically rendered cards show
+// the same converted prices as the rest of the site.
+window.__currencyRates = currencyRates;
 
 function getApiBase() {
   const isLocalLiveServer = ['5500', '5501', '5502', '5503', '3000'].includes(window.location.port);
@@ -626,9 +637,15 @@ function getDeliveryFeeKes() {
 }
 
 function updateDisplayedPrices() {
-  document.querySelectorAll('.price-display').forEach(display => {
-    display.textContent = formatCurrency(BASE_ITEM_PRICE_KES);
-  });
+  // On the catalogue page (#productGrid) prices are rendered dynamically by
+  // catalog.js with per-product sale/compare-at values, so leave them alone.
+  if (typeof window.MISTIZEN_PRODUCTS !== 'undefined' && document.getElementById('productGrid')) {
+    if (window.renderMistizenGrid) window.renderMistizenGrid();
+  } else {
+    document.querySelectorAll('.price-display').forEach(display => {
+      display.textContent = formatCurrency(BASE_ITEM_PRICE_KES);
+    });
+  }
   document.querySelectorAll('.delivery-method[data-fee-kes]').forEach(method => {
     const feeLabel = method.querySelector('small');
     if (feeLabel) feeLabel.textContent = formatCurrency(Number(method.dataset.feeKes));
@@ -662,6 +679,8 @@ async function setupCurrencySwitcher() {
     if (data.result !== 'success' || !data.rates) throw new Error('Rates unavailable');
     currencyRates = data.rates;
     currencyRates.KES = 1;
+    window.__currencyRates = currencyRates;
+    if (typeof window.renderMistizenGrid === 'function') window.renderMistizenGrid();
     const currencies = Object.keys(currencyRates).sort();
     selector.innerHTML = currencies.map(code => `<option value="${code}">${code} — ${new Intl.DisplayNames([navigator.language], { type: 'currency' }).of(code) || code}</option>`).join('');
     renderCurrencyOptions(selector);
@@ -674,6 +693,9 @@ async function setupCurrencySwitcher() {
   selector.addEventListener('change', () => {
     selectedCurrency = selector.value;
     localStorage.setItem('mistizenCurrency', selectedCurrency);
+    // Notify catalog.js so the max-price slider range/label follows the new
+    // currency while the underlying KES filter stays consistent.
+    window.dispatchEvent(new CustomEvent('mistizenCurrencyChange', { detail: { currency: selectedCurrency } }));
     updateDisplayedPrices();
   });
   updateDisplayedPrices();
@@ -1063,8 +1085,94 @@ function setupAdminDashboard() {
   const message = document.getElementById('adminMessage');
   const statusOptions = ['new', 'processing', 'out_for_delivery', 'delivered', 'cancelled'];
   function readable(value) { return String(value || '').replaceAll('_', ' '); }
+
+  // ---- KPI stats ----
+  function statEl(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
+  function renderStats(stats) {
+    if (!stats) return;
+    statEl('statTodaySales', formatCurrency(stats.today_sales_kes));
+    statEl('statWeekRevenue', formatCurrency(stats.week_revenue_kes));
+    statEl('statMonthRevenue', formatCurrency(stats.month_revenue_kes));
+    statEl('statTotalOrders', Number(stats.total_orders || 0).toLocaleString());
+    statEl('statAvgOrder', formatCurrency(stats.average_order_value_kes));
+    statEl('statNewCustomers', Number(stats.new_customers || 0).toLocaleString());
+  }
+  async function loadStats() {
+    try {
+      const response = await fetch(apiUrl('/api/admin/stats'), { credentials: 'include' });
+      const data = await response.json();
+      if (response.status === 403) { window.location.replace('account.html'); return; }
+      if (!response.ok || data.result !== 'success') throw new Error(data.message);
+      renderStats(data.stats);
+    } catch (error) {
+      statEl('statTodaySales', '—');
+      if (message) message.textContent = error.message || 'Could not load stats.';
+    }
+  }
+
+  // ---- Best-selling & low-stock product lists (client-side from product data
+  // and order payloads already fetched for the orders view). ----
+  function renderProducts(orders) {
+    const bestEl = document.getElementById('bestSellers');
+    const lowEl = document.getElementById('lowStock');
+    const products = window.MISTIZEN_PRODUCTS || [];
+    if (!bestEl && !lowEl) return;
+
+    // Aggregate quantities sold per product across all orders.
+    const soldByProduct = {};
+    (orders || []).forEach(order => {
+      let items = [];
+      try { items = JSON.parse(order.payload); } catch { items = []; }
+      items.forEach(item => {
+        const key = item.id || (item.name || '').toString();
+        if (!key) return;
+        soldByProduct[key] = (soldByProduct[key] || 0) + Number(item.quantity || 1);
+      });
+    });
+
+    // Best sellers: most units sold first, fall back to stock tag.
+    const best = [...products].sort((a, b) => {
+      const aSold = soldByProduct[a.id] || 0;
+      const bSold = soldByProduct[b.id] || 0;
+      if (aSold !== bSold) return bSold - aSold;
+      const aBest = (a.tags || []).includes('best-seller') ? 1 : 0;
+      const bBest = (b.tags || []).includes('best-seller') ? 1 : 0;
+      return bBest - aBest;
+    }).slice(0, 5);
+
+    // Low stock: available units below threshold, lowest first.
+    const LOW_STOCK_THRESHOLD = 6;
+    const low = products.filter(p => p.stock <= LOW_STOCK_THRESHOLD)
+      .sort((a, b) => a.stock - b.stock);
+
+    function productRow(p, meta) {
+      const price = p.isOnSale ? p.saleKes : p.baseKes;
+      return `<div class="admin-product-row">
+        <span class="admin-product-name">${escapeHtml(p.name)}</span>
+        <span class="admin-product-meta">${meta}</span>
+        <span class="admin-product-price">${formatCurrency(price)}</span>
+      </div>`;
+    }
+
+    if (bestEl) {
+      bestEl.innerHTML = best.length
+        ? best.map(p => productRow(p, `${soldByProduct[p.id] || 0} sold · ${p.stock} left`)).join('')
+        : '<p class="empty-cart">No product data available.</p>';
+    }
+    if (lowEl) {
+      lowEl.innerHTML = low.length
+        ? low.map(p => productRow(p, `${p.stock} left${p.stock <= 3 ? ' · reorder soon' : ''}`)).join('')
+        : '<p class="empty-cart">All products are well stocked.</p>';
+    }
+  }
+
+  // ---- Orders list ----
   function render(orders) {
-    if (!orders.length) { container.innerHTML = '<p class="empty-cart">No orders yet.</p>'; return; }
+    renderProducts(orders);
+    if (!orders.length) {
+      container.innerHTML = '<p class="empty-cart">No orders yet.</p>';
+      return;
+    }
     container.innerHTML = orders.map(order => {
       let items = [];
       try { items = JSON.parse(order.payload); } catch { items = []; }
@@ -1096,9 +1204,11 @@ function setupAdminDashboard() {
       if (response.status === 403) { window.location.replace('account.html'); return; }
       if (!response.ok || data.result !== 'success') throw new Error(data.message);
       render(data.orders);
+      loadStats();
     } catch (error) { message.textContent = error.message || 'Could not load orders.'; }
   }
   loadOrders();
+  loadStats();
 }
 
 setupAdminDashboard();
