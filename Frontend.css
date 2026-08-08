@@ -459,6 +459,9 @@ body.light-theme .support-page{background:transparent;}.light-theme .support-car
   min-height:100vh;
   padding:118px 20px 60px;
   color:var(--paper);
+  /* Solid, theme-aware background so all content stays visible regardless of
+     the light-at-top gradient on the fixed #webCanvas behind it. */
+  background:var(--ink);
 }
 .catalog-page .new-arrivals-title{margin:0 0 18px;}
 .catalog-page .currency-switcher{justify-content:flex-end;margin:0 0 18px;}
