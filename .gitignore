@@ -1,0 +1,4 @@
+.env
+mistizen.db
+__pycache__/
+*.py[cod]

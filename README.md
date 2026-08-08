@@ -44,7 +44,7 @@ The account and checkout screens are demo features. They do not process real pay
 
 1. In [Google Cloud Console](https://console.cloud.google.com/), create an OAuth 2.0 **Web application** client and configure the consent screen.
 2. Add this exact authorized redirect URI for local development: `http://localhost:5000/api/auth/google/callback`.
-3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` as environment variables. Do not put the secret in this repository or frontend files.
-4. For Render, also set `GOOGLE_REDIRECT_URI` to `https://YOUR-SERVICE.onrender.com/api/auth/google/callback`, and add exactly the same URI in Google Cloud Console.
+3. Copy `.env.example` to `.env`, then set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. The local server loads this file automatically; do not commit it or put the secret in frontend files.
+4. Add the live callback URL (for example, `https://YOUR-SERVICE.onrender.com/api/auth/google/callback`) in Google Cloud Console. Set `GOOGLE_REDIRECT_URI` to that same URL if the site is behind a proxy or has a canonical hostname.
 
 Google requires the redirect URI to exactly match the configured value. See the [Google OAuth web-server guide](https://developers.google.com/identity/protocols/oauth2/web-server) for the credential setup details.

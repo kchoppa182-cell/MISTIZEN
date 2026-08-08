@@ -1,6 +1,10 @@
 (function () {
   const canvas = document.getElementById('webCanvas');
+  // The animated background belongs only to the landing page. Avoid starting
+  // a render loop on catalogue, cart, account, and checkout pages.
+  if (!canvas || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const ctx = canvas.getContext('2d');
+  if (!ctx) return;
 
   let width, height;
   function resize() {
@@ -179,7 +183,12 @@
   window.addEventListener('resize', buildWebs);
 
   // ---- animation loop ----
+  let animationFrame = null;
   function animate() {
+    if (document.hidden) {
+      animationFrame = null;
+      return;
+    }
     ctx.clearRect(0, 0, width, height);
 
     // ease the parallax offset toward the raw cursor position
@@ -193,9 +202,12 @@
       web.update();
       web.draw(ctx, offsetX, offsetY);
     }
-    requestAnimationFrame(animate);
+    animationFrame = requestAnimationFrame(animate);
   }
   animate();
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && animationFrame === null) animate();
+  });
 })();
 
 // HOME EXPERIENCE: a down-scroll (wheel, swipe, or keyboard) moves from the
@@ -322,6 +334,8 @@ document.querySelectorAll('.card').forEach(card => {
 
   function showImage() {
     if (!images.length) return;
+    preview.decoding = 'async';
+    preview.loading = 'lazy';
     preview.src = images[activeImage];
     frame.classList.add('has-image');
     imageCount.textContent = images.length > 1 ? `${activeImage + 1} / ${images.length}` : '';
@@ -867,6 +881,21 @@ if (authForm) {
   }
   if (params.get('auth') === 'demo') {
     message.textContent = 'Google sign-in was not fully available, so you were signed in with a demo account.';
+  }
+  const googleButton = document.getElementById('googleSignIn');
+  if (googleButton) {
+    fetch(apiUrl('/api/auth/providers'), { credentials: 'include' })
+      .then(response => response.ok ? response.json() : Promise.reject())
+      .then(data => {
+        if (!data.google?.configured) {
+          googleButton.disabled = true;
+          googleButton.title = 'Google sign-in needs server configuration.';
+          if (!authError) message.textContent = 'Google sign-in is not available yet. You can still log in with your email and password.';
+        }
+      })
+      .catch(() => {
+        // The regular email form remains usable if the optional provider check fails.
+      });
   }
   document.querySelectorAll('.auth-tab').forEach(tab => tab.addEventListener('click', () => {
     authMode = tab.dataset.mode;

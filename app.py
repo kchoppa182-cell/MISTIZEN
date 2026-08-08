@@ -6,11 +6,13 @@ import smtplib
 import urllib.parse
 import urllib.request
 import time
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from hashlib import pbkdf2_hmac
 from pathlib import Path
 from secrets import token_hex
+from threading import Lock
 from email.message import EmailMessage
 from typing import Any, Dict, Optional
 
@@ -18,6 +20,25 @@ from flask import Flask, jsonify, redirect, request, send_from_directory, sessio
 from werkzeug.security import generate_password_hash, check_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def load_local_env() -> None:
+    """Load local development settings without replacing deployment variables."""
+    env_file = BASE_DIR / ".env"
+    if not env_file.is_file():
+        return
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            os.environ.setdefault(key, value)
+
+
+load_local_env()
 DB_PATH = Path(os.environ.get("MISTIZEN_DB_PATH", BASE_DIR / "mistizen.db"))
 MISTIZEN_ENV = os.environ.get("MISTIZEN_ENV", "development").lower()
 SECRET_KEY = os.environ.get("MISTIZEN_SECRET_KEY")
@@ -25,12 +46,14 @@ if not SECRET_KEY:
     if MISTIZEN_ENV == "production":
         raise RuntimeError("MISTIZEN_SECRET_KEY must be set in production")
     SECRET_KEY = token_hex(32)
+if MISTIZEN_ENV == "production" and len(SECRET_KEY) < 32:
+    raise RuntimeError("MISTIZEN_SECRET_KEY must be at least 32 characters in production")
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
-GOOGLE_REDIRECT_URI = os.environ.get(
-    "GOOGLE_REDIRECT_URI",
-    "http://localhost:5000/api/auth/google/callback",
-)
+# Set GOOGLE_REDIRECT_URI when the public address is behind a proxy or uses a
+# different canonical hostname.  When it is not set, use the address serving
+# the current request so local and deployed sign-in use the same callback.
+GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "").strip()
 ADMIN_EMAILS = {email.strip().lower() for email in os.environ.get("MISTIZEN_ADMIN_EMAILS", "").split(",") if email.strip()}
 SMTP_HOST = os.environ.get("MISTIZEN_SMTP_HOST", "")
 SMTP_PORT = int(os.environ.get("MISTIZEN_SMTP_PORT", "587"))
@@ -55,10 +78,29 @@ PHONE_RULES = {
 
 app = Flask(__name__, static_folder=".")
 app.secret_key = SECRET_KEY
+app.config["MAX_CONTENT_LENGTH"] = 1_000_000
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = MISTIZEN_ENV == "production"
+app.config["SESSION_COOKIE_NAME"] = "mistizen_session"
+app.config["SESSION_REFRESH_EACH_REQUEST"] = False
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+
+# Simple abuse protection for one-process deployments. Use a shared limiter at
+# the reverse proxy or hosting platform when running multiple application workers.
+REQUEST_WINDOWS = {
+    "/api/auth/login": (5, 60),
+    "/api/auth/register": (3, 3600),
+    "/api/support": (5, 3600),
+}
+_request_attempts = defaultdict(deque)
+_rate_limit_lock = Lock()
+EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,63}$")
+SAFE_STATIC_FILES = {
+    "Frontend.css", "script.js", "white-removebg-preview.png",
+    "Frontend.html", "PRODUCTS.html", "cart.html", "checkout.html",
+    "auth.html", "account.html", "admin.html", "support.html",
+}
 
 
 def get_db() -> sqlite3.Connection:
@@ -127,10 +169,11 @@ init_db()
 
 
 def get_google_oauth_config() -> Dict[str, str]:
+    redirect_uri = GOOGLE_REDIRECT_URI or request.url_root.rstrip("/") + "/api/auth/google/callback"
     return {
         "client_id": GOOGLE_CLIENT_ID,
         "client_secret": GOOGLE_CLIENT_SECRET,
-        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "redirect_uri": redirect_uri,
     }
 
 
@@ -190,6 +233,55 @@ def current_user() -> Optional[sqlite3.Row]:
         ).fetchone()
 
 
+def request_origin_is_trusted() -> bool:
+    """Accept state-changing browser requests only from this site."""
+    origin = request.headers.get("Origin")
+    if not origin:
+        # Non-browser clients do not send Origin. They still need authentication
+        # for protected endpoints; hosting firewalls should restrict admin access.
+        return True
+    request_origin = request.host_url.rstrip("/")
+    return origin == request_origin or (
+        MISTIZEN_ENV != "production" and origin in {
+            "http://localhost:5000", "http://127.0.0.1:5000", "http://[::1]:5000"
+        }
+    )
+
+
+def client_ip() -> str:
+    # Do not trust X-Forwarded-For unless a trusted reverse proxy is configured.
+    if os.environ.get("MISTIZEN_TRUST_PROXY") == "1":
+        return request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",", 1)[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def is_rate_limited() -> bool:
+    config = REQUEST_WINDOWS.get(request.path)
+    if not config:
+        return False
+    maximum, window_seconds = config
+    now = time.monotonic()
+    key = (request.path, client_ip())
+    with _rate_limit_lock:
+        attempts = _request_attempts[key]
+        while attempts and attempts[0] <= now - window_seconds:
+            attempts.popleft()
+        if len(attempts) >= maximum:
+            return True
+        attempts.append(now)
+    return False
+
+
+def strong_password(password: str) -> bool:
+    return (
+        len(password) >= 12
+        and len(password) <= 128
+        and any(char.islower() for char in password)
+        and any(char.isupper() for char in password)
+        and any(char.isdigit() for char in password)
+    )
+
+
 def send_order_confirmation(email: str, order_id: int, items: list, subtotal: float, delivery_fee: float, delivery_method: str, delivery_address: str) -> bool:
     """Send a receipt when SMTP is configured; never fail a completed order for email delivery."""
     if not all([SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM]):
@@ -239,14 +331,23 @@ def send_support_feedback(name: str, email: str, feedback: str) -> bool:
 @app.before_request
 def handle_preflight():
     if request.method == "OPTIONS" and request.path.startswith("/api/"):
-        origin = request.headers.get("Origin", "")
+        if not request_origin_is_trusted():
+            return jsonify({"result": "error", "message": "Untrusted origin"}), 403
         response = jsonify({})
         response.status_code = 200
-        response.headers["Access-Control-Allow-Origin"] = origin or "*"
+        response.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin", "")
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         return response
+
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.path.startswith("/api/"):
+        if not request_origin_is_trusted():
+            return jsonify({"result": "error", "message": "Untrusted origin"}), 403
+        if request.content_length not in (None, 0) and request.mimetype != "application/json":
+            return jsonify({"result": "error", "message": "JSON requests only"}), 415
+        if is_rate_limited():
+            return jsonify({"result": "error", "message": "Too many requests. Try again later."}), 429
 
 
 @app.after_request
@@ -262,6 +363,14 @@ def security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    )
+    if MISTIZEN_ENV == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
@@ -272,21 +381,38 @@ def index():
 
 @app.route("/<path:filename>")
 def serve_static(filename: str):
-    if filename.startswith("api/"):
+    if filename.startswith("api/") or filename not in SAFE_STATIC_FILES and not filename.startswith("assets/"):
         return jsonify({"result": "error", "message": "Not found"}), 404
-    if filename in {"Frontend.html", "PRODUCTS.html", "cart.html", "checkout.html", "auth.html", "account.html", "admin.html", "support.html"}:
-        return send_from_directory(BASE_DIR, filename)
-    if filename.startswith("assets/"):
-        return send_from_directory(BASE_DIR, filename)
-    return send_from_directory(BASE_DIR, filename)
+    if filename.startswith("assets/") and (".." in Path(filename).parts or Path(filename).suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ico"}):
+        return jsonify({"result": "error", "message": "Not found"}), 404
+    # Browsers can reuse static files between page visits instead of downloading
+    # the stylesheet, JavaScript, and product images every time.
+    is_asset = filename.startswith("assets/") or filename in {"Frontend.css", "script.js", "white-removebg-preview.png"}
+    response = send_from_directory(BASE_DIR, filename, max_age=86_400 if is_asset else 0)
+    if is_asset:
+        response.headers["Cache-Control"] = "public, max-age=86400"
+    else:
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @app.route("/api/health")
 def health():
-    return jsonify({
+    payload = {
         "result": "success",
         "message": "MISTIZEN backend is running",
-        "smtp_configured": all([SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM]),
+    }
+    if MISTIZEN_ENV != "production":
+        payload["smtp_configured"] = all([SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM])
+        payload["google_sign_in_configured"] = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+    return jsonify(payload)
+
+
+@app.route("/api/auth/providers")
+def auth_providers():
+    return jsonify({
+        "result": "success",
+        "google": {"configured": bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)},
     })
 
 
@@ -296,8 +422,8 @@ def register():
     email = (payload.get("email") or "").strip().lower()
     password = (payload.get("password") or "").strip()
 
-    if not email or not password or len(password) < 6:
-        return jsonify({"result": "error", "message": "Use a valid email and a password with at least 6 characters"}), 400
+    if not EMAIL_RE.fullmatch(email) or not strong_password(password):
+        return jsonify({"result": "error", "message": "Use a valid email and a password of at least 12 characters with uppercase, lowercase, and a number."}), 400
 
     with get_db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
@@ -591,7 +717,7 @@ def google_callback():
     code = request.args.get("code")
     state = request.args.get("state")
     expected_state = session.pop("oauth_state", None)
-    if expected_state and state != expected_state:
+    if not expected_state or not state or state != expected_state:
         return redirect("/auth.html?auth_error=invalid_state")
     if not code:
         return redirect("/auth.html?auth_error=missing_code")
@@ -619,29 +745,15 @@ def google_callback():
     try:
         with urllib.request.urlopen(token_req, timeout=10) as response:
             token_payload = json.loads(response.read().decode("utf-8"))
-    except Exception as exc:
-        fallback_email = f"demo-{token_hex(4)}@mistizen.local"
-        user_id = create_or_get_user(fallback_email, provider="google")
-        session.clear()
-        session.permanent = True
-        session["user_id"] = user_id
-        session["email"] = fallback_email
-        session["auth_provider"] = "demo"
-        return redirect("/PRODUCTS.html?auth=demo")
+    except Exception:
+        return redirect("/auth.html?auth_error=token_exchange_failed")
 
     access_token = token_payload.get("access_token")
     if not access_token:
-        fallback_email = f"demo-{token_hex(4)}@mistizen.local"
-        user_id = create_or_get_user(fallback_email, provider="google")
-        session.clear()
-        session.permanent = True
-        session["user_id"] = user_id
-        session["email"] = fallback_email
-        session["auth_provider"] = "demo"
-        return redirect("/PRODUCTS.html?auth=demo")
+        return redirect("/auth.html?auth_error=token_exchange_failed")
 
     userinfo_req = urllib.request.Request(
-        "https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + urllib.parse.quote(access_token),
+        "https://openidconnect.googleapis.com/v1/userinfo",
         headers={"Authorization": "Bearer " + access_token},
         method="GET",
     )
@@ -649,24 +761,11 @@ def google_callback():
         with urllib.request.urlopen(userinfo_req, timeout=10) as response:
             userinfo = json.loads(response.read().decode("utf-8"))
     except Exception:
-        fallback_email = f"demo-{token_hex(4)}@mistizen.local"
-        user_id = create_or_get_user(fallback_email, provider="google")
-        session.clear()
-        session.permanent = True
-        session["user_id"] = user_id
-        session["email"] = fallback_email
-        session["auth_provider"] = "demo"
-        return redirect("/PRODUCTS.html?auth=demo")
+        return redirect("/auth.html?auth_error=userinfo_failed")
 
     email = (userinfo.get("email") or "").strip().lower()
-    if not email:
-        fallback_email = f"demo-{token_hex(4)}@mistizen.local"
-        user_id = create_or_get_user(fallback_email, provider="google")
-        session.clear()
-        session["user_id"] = user_id
-        session["email"] = fallback_email
-        session["auth_provider"] = "demo"
-        return redirect("/PRODUCTS.html?auth=demo")
+    if not email or userinfo.get("email_verified") is not True:
+        return redirect("/auth.html?auth_error=email_missing")
 
     user_id = create_or_get_user(email, provider="google")
     session.clear()
