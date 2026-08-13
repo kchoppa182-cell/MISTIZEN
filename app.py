@@ -335,11 +335,19 @@ def request_origin_is_trusted() -> bool:
         # for protected endpoints; hosting firewalls should restrict admin access.
         return True
     request_origin = request.host_url.rstrip("/")
-    return origin == request_origin or (
-        MISTIZEN_ENV != "production" and origin in {
-            "http://localhost:5000", "http://127.0.0.1:5000", "http://[::1]:5000"
+    if origin == request_origin:
+        return True
+
+    # A static development server (for example VS Code Live Server) serves
+    # the HTML on a different local port while Flask serves the API on 5000.
+    # Permit only loopback origins in development; deployed requests must stay
+    # same-origin, so this does not open Railway to cross-site form requests.
+    if MISTIZEN_ENV != "production":
+        parsed_origin = urllib.parse.urlparse(origin)
+        return parsed_origin.scheme == "http" and parsed_origin.hostname in {
+            "localhost", "127.0.0.1", "::1"
         }
-    )
+    return False
 
 
 def client_ip() -> str:

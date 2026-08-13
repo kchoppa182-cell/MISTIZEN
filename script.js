@@ -552,9 +552,11 @@ let currencyRates = { ...fallbackCurrencyRates };
 window.__currencyRates = currencyRates;
 
 function getApiBase() {
-  const isLocalLiveServer = ['5500', '5501', '5502', '5503', '3000'].includes(window.location.port);
   const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
-  return isLocalHost && isLocalLiveServer ? 'http://127.0.0.1:5000' : '';
+  const isFlaskServer = window.location.port === '5000';
+  // Static preview servers can use different ports. Keep the hostname so
+  // session cookies work consistently for localhost and 127.0.0.1.
+  return isLocalHost && !isFlaskServer ? `http://${window.location.hostname}:5000` : '';
 }
 
 const API_BASE = getApiBase();

@@ -27,16 +27,21 @@
 3. Run `python app.py`.
 4. Open [http://localhost:5000](http://localhost:5000) in Chrome, or start **Launch Chrome against localhost** from the Run and Debug panel.
 
+You can also open an HTML page with VS Code Live Server/Live Preview. Keep
+`python app.py` running at the same time: the preview will use its own port
+for the pages and securely connect to the local API on port 5000. For the
+most complete local experience, open `http://localhost:5000` directly.
+
 Stop the server with `Ctrl+C` in the terminal.
 
 ## Share with friends
 
-`localhost` is private to your computer. To get a public link, push this folder to a GitHub repository and create a new **Web Service** at [Render](https://render.com):
+`localhost` is private to your computer. To get a public link, push this folder to a GitHub repository and create a new **Web Service** on Railway:
 
-- Choose the GitHub repository.
-- Render will detect `render.yaml` and use the included build/start commands.
-- Add an environment variable named `MISTIZEN_SECRET_KEY` with a long random value before publishing.
-- After deployment, send friends the generated `https://...onrender.com` link.
+- Create a Railway project from the GitHub repository. Railway detects the included `Procfile` and runs Gunicorn on Railway's assigned `PORT`.
+- Add `MISTIZEN_ENV=production` and a long random `MISTIZEN_SECRET_KEY` (at least 32 characters) in Railway Variables.
+- Add a Railway PostgreSQL service and set its `DATABASE_URL` as this service's `DATABASE_URL`. Do not rely on the local `mistizen.db` file for persistent production data.
+- Generate a public domain, redeploy, and use that `https://...` URL. All pages, assets, and API calls are served from the same domain.
 
 The account and checkout screens are demo features. They do not process real payments or provide Google/Apple sign-in until those payment and identity providers are separately configured.
 
