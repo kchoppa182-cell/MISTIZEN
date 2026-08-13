@@ -1,3 +1,9 @@
+/* Utility helpers for auth form */
+.hidden{display:none !important;}
+.password-row{display:flex;gap:8px;align-items:center;}
+.password-row input{flex:1;padding:12px;border-radius:8px;border:1px solid #45453f;background:#090908;color:var(--paper);}
+.password-toggle{padding:10px 12px;border-radius:8px;border:1px solid #45453f;background:transparent;color:var(--paper);cursor:pointer;font-weight:700}
+.password-toggle:active{transform:translateY(1px)}
 
 h1{
     color: rgb(235, 219, 0);

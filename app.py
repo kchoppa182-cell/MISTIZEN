@@ -375,13 +375,8 @@ def is_rate_limited() -> bool:
 
 
 def strong_password(password: str) -> bool:
-    return (
-        len(password) >= 8
-        and len(password) <= 128
-        and any(char.islower() for char in password)
-        and any(char.isupper() for char in password)
-        and any(char.isdigit() for char in password)
-    )
+    # Relaxed rule for this application: minimum 6 characters and at least one digit.
+    return bool(password) and 6 <= len(password) <= 128 and any(char.isdigit() for char in password)
 
 
 def send_order_confirmation(email: str, order_id: int, items: list, subtotal: float, delivery_fee: float, delivery_method: str, delivery_address: str) -> bool:
@@ -622,9 +617,12 @@ def register():
     payload = request.get_json(silent=True) or {}
     email = (payload.get("email") or "").strip().lower()
     password = (payload.get("password") or "").strip()
+    password_confirm = (payload.get("password_confirm") or "").strip()
 
     if not EMAIL_RE.fullmatch(email) or not strong_password(password):
-        return jsonify({"result": "error", "message": "Use a valid email and a password of at least 8 characters with uppercase, lowercase, and a number."}), 400
+        return jsonify({"result": "error", "message": "Use a valid email and a password of at least 6 characters and include a number."}), 400
+    if password != password_confirm:
+        return jsonify({"result": "error", "message": "Passwords do not match."}), 400
 
     with get_db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()

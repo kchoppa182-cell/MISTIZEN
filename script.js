@@ -889,6 +889,10 @@ if (authForm) {
   const subtitle = document.getElementById('authSubtitle');
   const submit = authForm.querySelector('.auth-submit');
   const message = document.getElementById('authMessage');
+  const confirmRow = document.getElementById('confirmRow');
+  const authPasswordConfirm = document.getElementById('authPasswordConfirm');
+  const togglePassword = document.getElementById('togglePassword');
+  const togglePasswordConfirm = document.getElementById('togglePasswordConfirm');
   const params = new URLSearchParams(window.location.search);
   const authError = params.get('auth_error');
   if (authError) {
@@ -907,6 +911,11 @@ if (authForm) {
     message.textContent = 'Google sign-in was not fully available, so you were signed in with a demo account.';
   }
   const googleButton = document.getElementById('googleSignIn');
+  const providerButtonsContainer = document.querySelector('.provider-buttons');
+  const authDivider = document.querySelector('.auth-divider');
+  // Default view is login: hide provider buttons and confirm row
+  if (providerButtonsContainer) providerButtonsContainer.classList.add('hidden');
+  if (authDivider) authDivider.classList.add('hidden');
   if (googleButton) {
     fetch(apiUrl('/api/auth/providers'), { credentials: 'include' })
       .then(response => response.ok ? response.json() : Promise.reject())
@@ -927,19 +936,48 @@ if (authForm) {
     title.textContent = authMode === 'signup' ? 'Create your account' : 'Welcome back';
     subtitle.textContent = authMode === 'signup' ? 'Join MISTIZEN and shop your fit.' : 'Sign in to continue shopping.';
     submit.textContent = authMode === 'signup' ? 'Sign up with email' : 'Log in with email';
+    // Show or hide the confirm-password row for sign-up
+    if (confirmRow) {
+      if (authMode === 'signup') {
+        confirmRow.classList.remove('hidden');
+        if (authPasswordConfirm) authPasswordConfirm.required = true;
+      } else {
+        confirmRow.classList.add('hidden');
+        if (authPasswordConfirm) { authPasswordConfirm.required = false; authPasswordConfirm.value = ''; }
+      }
+    }
+    // Show provider buttons only on sign-up (login shows only email+password)
+    if (providerButtonsContainer) providerButtonsContainer.classList.toggle('hidden', authMode !== 'signup');
+    if (authDivider) authDivider.classList.toggle('hidden', authMode !== 'signup');
     message.textContent = '';
   }));
+  // Toggle password visibility handlers
+  function toggleInputVisibility(input) {
+    if (!input) return;
+    input.type = input.type === 'password' ? 'text' : 'password';
+  }
+  if (togglePassword) togglePassword.addEventListener('click', () => { const p = document.getElementById('authPassword'); toggleInputVisibility(p); togglePassword.textContent = p.type === 'password' ? 'Show' : 'Hide'; });
+  if (togglePasswordConfirm) togglePasswordConfirm.addEventListener('click', () => { const p = document.getElementById('authPasswordConfirm'); toggleInputVisibility(p); togglePasswordConfirm.textContent = p.type === 'password' ? 'Show' : 'Hide'; });
+
   authForm.addEventListener('submit', async event => {
     event.preventDefault();
     const email = document.getElementById('authEmail').value.trim();
     const password = document.getElementById('authPassword').value;
+    const passwordConfirm = authPasswordConfirm ? authPasswordConfirm.value : '';
     const endpoint = authMode === 'signup' ? '/api/auth/register' : '/api/auth/login';
     message.textContent = 'Please wait...';
+    // Client-side validation: signup requires at least 6 chars and a number
+    if (authMode === 'signup') {
+      const re = /(?=.*\d).{6,}/;
+      if (!re.test(password)) { message.textContent = 'Password must be at least 6 characters and include a number.'; return; }
+      if (password !== passwordConfirm) { message.textContent = 'Passwords do not match.'; return; }
+    }
     try {
+      const bodyPayload = authMode === 'signup' ? { email, password, password_confirm: passwordConfirm } : { email, password };
       const response = await fetch(apiUrl(endpoint), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(bodyPayload),
         credentials: 'include'
       });
       const data = await response.json();
